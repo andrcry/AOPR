@@ -14,5 +14,13 @@ namespace SimpleArchiver.Tests
 
             return Encoding.ASCII.GetBytes(text);
         }
+
+        // Випадкові байти з фіксованим seed, щоб тест завжди був однаковий
+        public static byte[] RandomBytes(int count, int seed)
+        {
+            var data = new byte[count];
+            new Random(seed).NextBytes(data);
+            return data;
+        }
     }
 }

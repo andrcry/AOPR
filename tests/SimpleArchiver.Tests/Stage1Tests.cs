@@ -179,5 +179,97 @@ namespace SimpleArchiver.Tests
 
             return "OK";
         }
+
+        // Кодування блока
+
+        // Елементи блока hello.txt з розділу 8 специфікації: 12 літералів "hello world "
+        // і два посилання на 12 байтів назад. На чекпоінті 1 пошуку повторів ще немає,
+        // тому елементи складено вручну, щоб перевірити саме формат блока і коди Гаффмана
+        static List<Token> SpecificationTokens()
+        {
+            var tokens = new List<Token>();
+            foreach (char c in "hello world ")
+                tokens.Add(Token.MakeLiteral((byte)c));
+            tokens.Add(Token.MakeMatch(258, 12));
+            tokens.Add(Token.MakeMatch(210, 12));
+            return tokens;
+        }
+
+        // Блок hello.txt збігається з прикладом специфікації
+        [Fact]
+        public void BlockCoderMatchesSpecificationExample()
+        {
+            List<Token> tokens = SpecificationTokens();
+            byte[] block = BlockCoder.Encode(tokens);
+
+            Assert.Equal(14, tokens.Count);
+            Assert.Equal(57, block.Length);
+
+            // Останні 7 байтів - бітовий потік ED 06 A3 F3 15 9D 18
+            var stream = new byte[7];
+            Array.Copy(block, block.Length - 7, stream, 0, 7);
+            Assert.Equal(new byte[] { 0xED, 0x06, 0xA3, 0xF3, 0x15, 0x9D, 0x18 }, stream);
+
+            Assert.Equal(TestHelpers.Hello480(), BlockCoder.Decode(block, 480));
+        }
+
+        // Методичка 10.15: декодер на вручну складених елементах
+        [Fact]
+        public void BlockCoderDecodesHandMadeTokens()
+        {
+            var tokens = new List<Token>();
+            tokens.Add(Token.MakeLiteral((byte)'a'));
+            tokens.Add(Token.MakeLiteral((byte)'b'));
+            tokens.Add(Token.MakeLiteral((byte)'c'));
+            tokens.Add(Token.MakeMatch(6, 3));
+
+            byte[] block = BlockCoder.Encode(tokens);
+
+            Assert.Equal(Encoding.ASCII.GetBytes("abcabcabc"), BlockCoder.Decode(block, 9));
+        }
+
+        // Методичка 10.20: відстань 32767 і 32768 дозволені, 32769 ні
+        [Fact]
+        public void BlockCoderDistanceLimits()
+        {
+            byte[] start = TestHelpers.RandomBytes(32768, 11);
+            List<Token> tokens = BlockCoder.LiteralsOnly(start);
+            tokens.Add(Token.MakeMatch(3, 32768));
+            tokens.Add(Token.MakeMatch(3, 32767));
+
+            byte[] restored = BlockCoder.Decode(BlockCoder.Encode(tokens), 32768 + 6);
+
+            Assert.Equal(start[0], restored[32768]);
+            Assert.Equal(start[1], restored[32769]);
+            Assert.Equal(start[2], restored[32770]);
+
+            List<Token> tooFar = BlockCoder.LiteralsOnly(TestHelpers.RandomBytes(32769, 12));
+            tooFar.Add(Token.MakeMatch(3, 32769));
+
+            bool rejected = false;
+            try
+            {
+                BlockCoder.Encode(tooFar);
+            }
+            catch (ArgumentException)
+            {
+                rejected = true;
+            }
+            Assert.True(rejected);
+
+            // Відстань 32769 потребувала б символу DIST 16, а таку таблицю розархіватор відхиляє
+            Assert.Equal(15, BlockCoder.DistanceCode(32768));
+            Assert.Equal(16, BlockCoder.DistanceCode(32769));
+        }
+
+        // Блок із самих літералів відновлюється
+        [Fact]
+        public void BlockCoderLiteralsOnlyRoundTrip()
+        {
+            byte[] data = Encoding.UTF8.GetBytes("Привіт, світе! Hello!");
+            byte[] block = BlockCoder.Encode(BlockCoder.LiteralsOnly(data));
+
+            Assert.Equal(data, BlockCoder.Decode(block, data.Length));
+        }
     }
 }
