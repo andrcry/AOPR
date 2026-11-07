@@ -5,6 +5,8 @@ namespace SimpleArchiver.Tests
     // Допоміжні методи для тестів
     public static class TestHelpers
     {
+        public const string Password = "algo2026"; // пароль для тестів
+
         // Файл з контрольного прикладу: 40 повторів "hello world " = 480 байтів
         public static byte[] Hello480()
         {

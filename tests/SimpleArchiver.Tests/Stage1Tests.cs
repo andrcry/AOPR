@@ -271,5 +271,135 @@ namespace SimpleArchiver.Tests
 
             Assert.Equal(data, BlockCoder.Decode(block, data.Length));
         }
+
+        // Цілий архів
+
+        // Архів hello.txt має 172 байти, як у специфікації
+        [Fact]
+        public void ArchiveSpecificationExampleIs172Bytes()
+        {
+            byte[] salt =
+            {
+                0x00,
+                0x01,
+                0x02,
+                0x03,
+                0x04,
+                0x05,
+                0x06,
+                0x07,
+                0x08,
+                0x09,
+                0x0A,
+                0x0B,
+                0x0C,
+                0x0D,
+                0x0E,
+                0x0F,
+            };
+            byte[] nonce =
+            {
+                0x01,
+                0x02,
+                0x03,
+                0x04,
+                0x05,
+                0x06,
+                0x07,
+                0x08,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+            };
+
+            // Навантаження як у розділі 8: один файл hello.txt, один блок з елементами прикладу
+            var file = new FileRecord();
+            file.Name = "hello.txt";
+            file.OriginalSize = 480;
+            file.Crc = Crc32.Compute(TestHelpers.Hello480());
+            file.FileType = 0;
+            file.Strategy = 1;
+
+            var block = new BlockRecord();
+            block.RawLength = 480;
+            block.Data = BlockCoder.Encode(SpecificationTokens());
+
+            var payload = new Payload();
+            payload.Files.Add(file);
+            payload.Blocks.Add(block);
+            Assert.Equal(99, payload.ToBytes().Length);
+
+            var volumes = new List<byte[]>();
+            volumes.Add(
+                Volume.Seal(
+                    0,
+                    1,
+                    salt,
+                    nonce,
+                    payload.ToBytes(),
+                    Keys.Derive(TestHelpers.Password, salt)
+                )
+            );
+
+            Assert.Equal(172, volumes[0].Length);
+
+            // Заголовок байт у байт як у розділі 8
+            byte[] expectedHeader =
+            {
+                0x53,
+                0x41,
+                0x52,
+                0x43,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+                0x01,
+                0x00,
+                0x01,
+                0x02,
+                0x03,
+                0x04,
+                0x05,
+                0x06,
+                0x07,
+                0x08,
+                0x09,
+                0x0A,
+                0x0B,
+                0x0C,
+                0x0D,
+                0x0E,
+                0x0F,
+                0x01,
+                0x02,
+                0x03,
+                0x04,
+                0x05,
+                0x06,
+                0x07,
+                0x08,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x63,
+            };
+            var header = new byte[41];
+            Array.Copy(volumes[0], header, 41);
+            Assert.Equal(expectedHeader, header);
+
+            // Розархіватора ще немає, тому розшифровуємо том і читаємо навантаження вручну
+            VolumeHeader parsed = VolumeHeader.Parse(volumes[0]);
+            Payload restored = Payload.Parse(
+                Volume.Open(volumes[0], parsed, Keys.Derive(TestHelpers.Password, salt))
+            );
+            Assert.Equal("hello.txt", restored.Files[0].Name);
+            Assert.Equal(TestHelpers.Hello480(), BlockCoder.Decode(restored.Blocks[0].Data, 480));
+        }
     }
 }
