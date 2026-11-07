@@ -1,0 +1,7 @@
+bin/
+obj/
+.DS_Store
+TestResults/
+.vscode/
+*.arc
+!data/reference/*.arc
