@@ -7,15 +7,29 @@ namespace SimpleArchiver
 
         public int Length => bytes.Count; // скільки байтів уже записано
 
-        // Записує один байт
+        // Записує один байт. Число поза 0…255 не обрізається мовчки, а дає помилку
         public void WriteU8(int value)
         {
+            if (value < 0 || value > 0xFF)
+                throw new ArgumentOutOfRangeException(
+                    nameof(value),
+                    value,
+                    "uint8 має бути в межах 0…255"
+                );
+
             bytes.Add((byte)value);
         }
 
-        // Записує число двома байтами, спершу старший
+        // Записує число двома байтами, спершу старший. Число поза 0…65535 дає помилку
         public void WriteU16(int value)
         {
+            if (value < 0 || value > 0xFFFF)
+                throw new ArgumentOutOfRangeException(
+                    nameof(value),
+                    value,
+                    "uint16 має бути в межах 0…65535"
+                );
+
             bytes.Add((byte)(value >> 8));
             bytes.Add((byte)value);
         }

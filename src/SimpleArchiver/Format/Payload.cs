@@ -21,6 +21,13 @@ namespace SimpleArchiver
 
             foreach (FileRecord file in Files)
             {
+                // Те саме правило, що й у Parse: не створюємо архів, який самі ж відхилимо
+                if (!SafeNames.IsSafe(file.Name))
+                    throw new ArgumentException(
+                        $"небезпечне ім'я файла: {file.Name}",
+                        nameof(Files)
+                    );
+
                 byte[] name = Encoding.UTF8.GetBytes(file.Name);
                 writer.WriteU16(name.Length);
                 writer.WriteBytes(name);
