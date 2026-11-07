@@ -4,6 +4,15 @@ namespace SimpleArchiver.Tests
 {
     public class Stage1Tests
     {
+        // CRC32 дає відомі значення
+        [Fact]
+        public void Crc32GivesKnownValues()
+        {
+            // Стандартна перевірка CRC32 і значення з контрольного прикладу
+            Assert.Equal(0xCBF43926u, Crc32.Compute(Encoding.ASCII.GetBytes("123456789")));
+            Assert.Equal(0x70208846u, Crc32.Compute(TestHelpers.Hello480()));
+        }
+
         // Числа записуються старшим байтом уперед
         [Fact]
         public void ByteWriterWritesBigEndian()
