@@ -30,9 +30,6 @@ namespace SimpleArchiver
         {
             CheckFiles(files);
 
-            if (settings.BlockSize <= 0)
-                throw new ArgumentException("BlockSize має бути більшим за 0");
-
             var records = new List<FileRecord>();
             var blocks = new List<PreparedBlock>();
 
@@ -40,7 +37,7 @@ namespace SimpleArchiver
             {
                 byte[] data = files[fileNumber].Data;
 
-                // Крок 1. Запис таблиці файлів
+                // Запис таблиці файлів
                 var record = new FileRecord();
                 record.Name = files[fileNumber].Name;
                 record.OriginalSize = data.Length;
@@ -48,27 +45,23 @@ namespace SimpleArchiver
                 record.Strategy = (int)settings.Parser;
                 records.Add(record);
 
-                // Крок 2. Ріжемо файл на блоки по BlockSize і кодуємо кожен. Порожній файл блоків не має
-                int blockNumber = 0;
-                for (int offset = 0; offset < data.Length; offset += settings.BlockSize)
+                // Розбиття на блоки: фіксоване або ДП
+                List<PreparedBlock> fileBlocks = settings.UseDpBlockSplit
+                    ? BlockSplitter.SplitDp(data, settings)
+                    : BlockSplitter.SplitFixed(data, settings, true);
+
+                for (int b = 0; b < fileBlocks.Count; b++)
                 {
-                    int size = Math.Min(settings.BlockSize, data.Length - offset);
-                    var chunk = new byte[size];
-                    Array.Copy(data, offset, chunk, 0, size);
-
-                    PreparedBlock block = EncodeBlock(chunk, settings);
-                    block.FileNumber = fileNumber;
-                    block.BlockNumber = blockNumber;
-                    blocks.Add(block);
-
-                    blockNumber++;
+                    fileBlocks[b].FileNumber = fileNumber;
+                    fileBlocks[b].BlockNumber = b;
+                    blocks.Add(fileBlocks[b]);
                 }
             }
 
-            // Крок 3. Розкласти блоки по томах (рюкзак)
+            // Розкласти блоки по томах (рюкзак)
             List<Payload> payloads = VolumePacker.Pack(records, blocks, settings);
 
-            // Крок 4. Зашифрувати і запломбувати кожен том
+            // Зашифрувати і запломбувати кожен том
             Keys keys = Keys.Derive(password, salt); // один раз на весь архів
 
             var volumes = new List<byte[]>();
@@ -87,22 +80,28 @@ namespace SimpleArchiver
             return volumes;
         }
 
-        // Кодує один блок LZ77 і Гаффманом. Якщо закодований блок не коротший за сирий, зберігає сирий (NO_COMPRESSION)
-        public static PreparedBlock EncodeBlock(byte[] raw, Settings settings)
-        {
-            byte[] coded = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
+        // Кодує блок, дозволяючи стиснення
+        public static PreparedBlock EncodeBlock(byte[] raw, Settings settings) =>
+            EncodeBlock(raw, settings, true);
 
+        // Кодує один блок LZ77 і Гаффманом. Якщо стиснення заборонене або закодований блок
+        // не коротший за сирий, зберігає сирий (NO_COMPRESSION)
+        public static PreparedBlock EncodeBlock(byte[] raw, Settings settings, bool compress)
+        {
             var block = new PreparedBlock();
             block.RawLength = raw.Length;
+            block.Data = raw;
+            block.Flags = BlockRecord.NoCompressionFlag;
+
+            if (!compress)
+                return block;
+
+            byte[] coded = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
 
             if (coded.Length < raw.Length)
             {
                 block.Data = coded;
-            }
-            else
-            {
-                block.Data = raw;
-                block.Flags = BlockRecord.NoCompressionFlag;
+                block.Flags = 0;
             }
 
             return block;

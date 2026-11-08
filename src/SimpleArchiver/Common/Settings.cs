@@ -5,6 +5,8 @@ namespace SimpleArchiver
     {
         // Розбиття на блоки
         public int BlockSize { get; set; } = 65536; // block_size: найбільший розмір блока
+        public bool UseDpBlockSplit { get; set; } = false; // true - ДП-розбиття на блоки
+        public int SplitUnit { get; set; } = 8192; // крок, з яким ДП шукає межі блоків
 
         // LZ77
         public ParserKind Parser { get; set; } = ParserKind.Lazy;

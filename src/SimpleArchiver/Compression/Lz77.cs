@@ -102,13 +102,13 @@ namespace SimpleArchiver
         {
             int n = data.Length;
 
-            // Крок 1. Знайти множину збігів M_i для кожної позиції
+            // Знайти множину збігів M_i для кожної позиції
             var candidates = new List<(int Length, int Distance)>[n];
             var finder = new MatchFinder(data, maxChain);
             for (int i = 0; i < n; i++)
                 candidates[i] = finder.FindAll(i);
 
-            // Крок 2. Заповнити таблицю C з кінця
+            // Заповнити таблицю C з кінця
             var cost = new long[n + 1]; // cost[n] = 0
             var stepLength = new int[n]; // 1 - літерал, інакше довжина посилання
             var stepDistance = new int[n];
@@ -141,7 +141,7 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 3. Відновити розбір від початку за запам'ятованими кроками
+            // Відновити розбір від початку за запам'ятованими кроками
             var tokens = new List<Token>();
             int pos = 0;
 
