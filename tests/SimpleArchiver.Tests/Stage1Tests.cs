@@ -264,7 +264,7 @@ namespace SimpleArchiver.Tests
         public void RandomNoiseIsStoredWithoutCompression()
         {
             byte[] noise = TestHelpers.RandomBytes(10000, 1);
-            BlockRecord block = ArchiveWriter.EncodeBlock(noise, TestHelpers.DefaultSettings());
+            PreparedBlock block = ArchiveWriter.EncodeBlock(noise, TestHelpers.DefaultSettings());
 
             Assert.Equal(BlockRecord.NoCompressionFlag, block.Flags);
             Assert.Equal(noise.Length, block.Data.Length);

@@ -77,7 +77,7 @@
             return Console.ReadLine() ?? "";
         }
 
-        // Пакує файли в один том
+        // Пакує файли. Один том - архів.arc, кілька - архів.part0.arc, архів.part1.arc, ...
         static void Pack(string[] args)
         {
             var files = new List<ArchiveFile>();
@@ -90,8 +90,20 @@
                 new Settings()
             );
 
-            File.WriteAllBytes(args[1], volumes[0]);
-            Console.WriteLine($"Готово: {args[1]}, {volumes[0].Length} байтів");
+            if (volumes.Count == 1)
+            {
+                File.WriteAllBytes(args[1], volumes[0]);
+                Console.WriteLine($"Готово: {args[1]}, {volumes[0].Length} байтів");
+                return;
+            }
+
+            string baseName = Path.ChangeExtension(args[1], null);
+            for (int i = 0; i < volumes.Count; i++)
+            {
+                string path = $"{baseName}.part{i}.arc";
+                File.WriteAllBytes(path, volumes[i]);
+                Console.WriteLine($"Том {i}: {path}, {volumes[i].Length} байтів");
+            }
         }
 
         // Розпаковує томи в папку

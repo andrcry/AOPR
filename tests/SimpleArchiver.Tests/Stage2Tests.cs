@@ -169,5 +169,154 @@ namespace SimpleArchiver.Tests
 
             return best;
         }
+
+        // Томи
+
+        // Налаштування з маленькими томами
+        static Settings SmallVolumes()
+        {
+            var settings = new Settings();
+            settings.BlockSize = 1000;
+            settings.MaxVolumeBytes = 3000;
+            return settings;
+        }
+
+        // Файли для перевірки томів
+        static List<ArchiveFile> FilesForVolumes()
+        {
+            var files = new List<ArchiveFile>();
+            files.Add(new ArchiveFile("noise.bin", TestHelpers.RandomBytes(10000, 5))); // більший за том
+            files.Add(new ArchiveFile("hello.txt", TestHelpers.Hello480()));
+            files.Add(new ArchiveFile("empty.txt", new byte[0]));
+            return files;
+        }
+
+        // Великий файл ділиться, кожен том вміщується в ліміт
+        [Fact]
+        public void VolumesBigFileIsSplitAndEveryVolumeFits()
+        {
+            List<ArchiveFile> input = FilesForVolumes();
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                input,
+                TestHelpers.Password,
+                SmallVolumes()
+            );
+
+            Assert.True(volumes.Count > 1);
+            foreach (byte[] volume in volumes)
+                Assert.True(volume.Length <= 3000);
+
+            List<ArchiveFile> output = ArchiveReader.ReadArchive(volumes, TestHelpers.Password);
+            Assert.Equal(input.Count, output.Count);
+            for (int i = 0; i < input.Count; i++)
+            {
+                Assert.Equal(input[i].Name, output[i].Name);
+                Assert.Equal(input[i].Data, output[i].Data);
+            }
+        }
+
+        // Порядок томів не важливий
+        [Fact]
+        public void VolumesOrderDoesNotMatter()
+        {
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                FilesForVolumes(),
+                TestHelpers.Password,
+                SmallVolumes()
+            );
+
+            var reversed = new List<byte[]>(volumes);
+            reversed.Reverse();
+
+            List<ArchiveFile> output = ArchiveReader.ReadArchive(reversed, TestHelpers.Password);
+            Assert.Equal(TestHelpers.RandomBytes(10000, 5), output[0].Data);
+        }
+
+        // Відсутній або дубльований том відхиляється
+        [Fact]
+        public void VolumesMissingOrDuplicatedVolumeIsRejected()
+        {
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                FilesForVolumes(),
+                TestHelpers.Password,
+                SmallVolumes()
+            );
+
+            var missing = new List<byte[]>(volumes);
+            missing.RemoveAt(1);
+            Assert.Equal(
+                ErrorCodes.Volumes,
+                TestHelpers.ErrorWhenReading(missing, TestHelpers.Password)
+            );
+
+            var duplicated = new List<byte[]>(volumes);
+            duplicated[1] = volumes[0];
+            Assert.Equal(
+                ErrorCodes.Volumes,
+                TestHelpers.ErrorWhenReading(duplicated, TestHelpers.Password)
+            );
+        }
+
+        // Томи з різних архівів відхиляються
+        [Fact]
+        public void VolumesFromDifferentArchivesAreRejected()
+        {
+            List<byte[]> first = ArchiveWriter.CreateArchive(
+                FilesForVolumes(),
+                TestHelpers.Password,
+                SmallVolumes()
+            );
+            List<byte[]> second = ArchiveWriter.CreateArchive(
+                FilesForVolumes(),
+                TestHelpers.Password,
+                SmallVolumes()
+            );
+
+            var mixed = new List<byte[]>(first);
+            mixed[0] = second[0]; // інша сіль
+            Assert.Equal(
+                ErrorCodes.Volumes,
+                TestHelpers.ErrorWhenReading(mixed, TestHelpers.Password)
+            );
+        }
+
+        // Порожній архів має один том
+        [Fact]
+        public void VolumesEmptyArchiveHasOneVolume()
+        {
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                new List<ArchiveFile>(),
+                TestHelpers.Password,
+                SmallVolumes()
+            );
+
+            Assert.Single(volumes);
+            Assert.Empty(ArchiveReader.ReadArchive(volumes, TestHelpers.Password));
+        }
+
+        // Блок, більший за том, дає зрозумілу помилку
+        [Fact]
+        public void VolumesBlockBiggerThanVolumeGivesClearError()
+        {
+            var settings = new Settings();
+            settings.BlockSize = 5000;
+            settings.MaxVolumeBytes = 3000;
+
+            bool failed = false;
+            try
+            {
+                ArchiveWriter.CreateArchive(
+                    TestHelpers.OneFile("noise.bin", TestHelpers.RandomBytes(5000, 9)),
+                    TestHelpers.Password,
+                    settings
+                );
+            }
+            catch (InvalidOperationException)
+            {
+                failed = true;
+            }
+
+            Assert.True(failed);
+        }
     }
 }

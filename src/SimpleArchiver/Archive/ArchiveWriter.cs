@@ -3,13 +3,11 @@ using System.Text;
 
 namespace SimpleArchiver
 {
-    // Створює архів з одного тому: ріже файли на блоки, стискає блоки LZ77 і Гаффманом,
-    // збирає навантаження, шифрує AES і ставить пломбу HMAC
+    // Створює архів: ріже файл на блоки, стискає їх LZ77 і Гаффманом,
+    // розкладає по томах, шифрує AES і ставить пломбу HMAC
     public static class ArchiveWriter
     {
-        const int maxCount = 65535; // найбільше значення полів file_count і block_count (uint16)
-
-        // Створює архів. Сіль і nonce нові випадкові для кожного архіву
+        // Сіль і nonce нові випадкові для кожного архіву
         public static List<byte[]> CreateArchive(
             List<ArchiveFile> files,
             string password,
@@ -21,7 +19,7 @@ namespace SimpleArchiver
             return CreateArchive(files, password, settings, salt, noncePrefix);
         }
 
-        // Створює архів із заданими сіллю і nonce. Тільки для тестів з контрольним прикладом
+        // Варіант із заданими сіллю і nonce. Тільки для тестів з контрольним прикладом
         public static List<byte[]> CreateArchive(
             List<ArchiveFile> files,
             string password,
@@ -35,22 +33,22 @@ namespace SimpleArchiver
             if (settings.BlockSize <= 0)
                 throw new ArgumentException("BlockSize має бути більшим за 0");
 
-            var payload = new Payload();
+            var records = new List<FileRecord>();
+            var blocks = new List<PreparedBlock>();
 
-            for (int fileIndex = 0; fileIndex < files.Count; fileIndex++)
+            for (int fileNumber = 0; fileNumber < files.Count; fileNumber++)
             {
-                byte[] data = files[fileIndex].Data;
+                byte[] data = files[fileNumber].Data;
 
-                // Крок 1. Запис таблиці файлів: ім'я, розмір і CRC32 цілого файла
+                // Крок 1. Запис таблиці файлів
                 var record = new FileRecord();
-                record.Name = files[fileIndex].Name;
+                record.Name = files[fileNumber].Name;
                 record.OriginalSize = data.Length;
                 record.Crc = Crc32.Compute(data);
-                record.FileType = 0; // тип визначатиме перцептрон на чекпоінті 2
-                record.Strategy = (int)settings.Parser; // спосіб розбору LZ77: 1 - жадібний, 2 - лінивий
-                payload.Files.Add(record);
+                record.Strategy = (int)settings.Parser;
+                records.Add(record);
 
-                // Крок 2. Ріжемо файл на блоки і кодуємо кожен. Порожній файл блоків не має
+                // Крок 2. Ріжемо файл на блоки по BlockSize і кодуємо кожен. Порожній файл блоків не має
                 int blockNumber = 0;
                 for (int offset = 0; offset < data.Length; offset += settings.BlockSize)
                 {
@@ -58,40 +56,43 @@ namespace SimpleArchiver
                     var chunk = new byte[size];
                     Array.Copy(data, offset, chunk, 0, size);
 
-                    BlockRecord block = EncodeBlock(chunk, settings);
-                    block.FileIndex = fileIndex;
+                    PreparedBlock block = EncodeBlock(chunk, settings);
+                    block.FileNumber = fileNumber;
                     block.BlockNumber = blockNumber;
-                    payload.Blocks.Add(block);
+                    blocks.Add(block);
 
                     blockNumber++;
                 }
             }
 
-            if (payload.Files.Count > maxCount || payload.Blocks.Count > maxCount)
-                throw new InvalidOperationException("забагато файлів або блоків для одного тому");
+            // Крок 3. Розкласти блоки по томах (рюкзак)
+            List<Payload> payloads = VolumePacker.Pack(records, blocks, settings);
 
-            // Крок 3. Ключі з пароля один раз, потім шифрування і пломба
-            Keys keys = Keys.Derive(password, salt);
-            byte[] volume = Volume.Seal(
-                0,
-                1,
-                salt,
-                MakeNonce(noncePrefix, 0),
-                payload.ToBytes(),
-                keys
-            );
+            // Крок 4. Зашифрувати і запломбувати кожен том
+            Keys keys = Keys.Derive(password, salt); // один раз на весь архів
 
             var volumes = new List<byte[]>();
-            volumes.Add(volume);
+            for (int i = 0; i < payloads.Count; i++)
+                volumes.Add(
+                    Volume.Seal(
+                        i,
+                        payloads.Count,
+                        salt,
+                        MakeNonce(noncePrefix, i),
+                        payloads[i].ToBytes(),
+                        keys
+                    )
+                );
+
             return volumes;
         }
 
         // Кодує один блок LZ77 і Гаффманом. Якщо закодований блок не коротший за сирий, зберігає сирий (NO_COMPRESSION)
-        public static BlockRecord EncodeBlock(byte[] raw, Settings settings)
+        public static PreparedBlock EncodeBlock(byte[] raw, Settings settings)
         {
             byte[] coded = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
 
-            var block = new BlockRecord();
+            var block = new PreparedBlock();
             block.RawLength = raw.Length;
 
             if (coded.Length < raw.Length)
@@ -107,7 +108,7 @@ namespace SimpleArchiver
             return block;
         }
 
-        // Складає nonce: 8 байтів архіву і номер тому. Так nonce різний для кожного тому
+        // nonce = 8 байтів архіву + номер тому. Так nonce різний для кожного тому
         static byte[] MakeNonce(byte[] prefix, int volumeIndex)
         {
             var nonce = new byte[12];
