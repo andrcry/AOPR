@@ -168,12 +168,62 @@ namespace SimpleArchiver.Tests
         [Fact]
         public void MlpGradientMatchesNumeric()
         {
-            var net = new Mlp(new[] { FileFeatures.Count, 6, 7 }, 1);
+            var net = new Mlp(new[] { FileFeatures.Count, 6, FileClassifier.ClassCount }, 1);
             double[] x = FileFeatures.Compute(SyntheticFiles.Csv(2000, 1));
-            var target = new double[7];
+            var target = new double[FileClassifier.ClassCount];
             target[2] = 1;
 
             Assert.True(net.GradientCheck(x, target) < 1e-7);
+        }
+
+        // Macro-F1 для відомої матриці помилок
+        [Fact]
+        public void MacroF1KnownMatrix()
+        {
+            var confusion = new int[FileClassifier.ClassCount, FileClassifier.ClassCount];
+            confusion[0, 0] = 8;
+            confusion[0, 1] = 2;
+            confusion[1, 0] = 1;
+            confusion[1, 1] = 9;
+
+            // F1 класу 0 = 16/19, класу 1 = 18/21, решти класів немає
+            Assert.Equal((16.0 / 19 + 18.0 / 21) / 2, Metrics.MacroF1(confusion), 9);
+        }
+
+        // Класифікатор розпізнає штучні типи файлів
+        [Fact]
+        public void ClassifierLearnsSyntheticTypes()
+        {
+            FileClassifier classifier = SyntheticFiles.TrainClassifier();
+
+            List<Sample> test = SyntheticFiles.MakeSamples(10, 1000);
+            double f1 = Metrics.MacroF1(Metrics.Confusion(classifier.Net, test));
+
+            Assert.True(f1 >= 0.9, $"macro-F1 = {f1}");
+        }
+
+        // Збережені й завантажені ваги дають ті самі відповіді
+        [Fact]
+        public void ClassifierSaveAndLoadGiveSameAnswers()
+        {
+            FileClassifier classifier = SyntheticFiles.TrainClassifier();
+            string path = Path.GetTempFileName();
+
+            try
+            {
+                classifier.Save(path);
+                FileClassifier loaded = FileClassifier.Load(path);
+
+                foreach (Sample sample in SyntheticFiles.MakeSamples(3, 2000))
+                    Assert.Equal(
+                        classifier.Net.PredictClass(sample.Features),
+                        loaded.Net.PredictClass(sample.Features)
+                    );
+            }
+            finally
+            {
+                File.Delete(path);
+            }
         }
     }
 }
