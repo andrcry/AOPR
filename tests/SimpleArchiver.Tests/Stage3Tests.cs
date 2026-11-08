@@ -77,7 +77,7 @@ namespace SimpleArchiver.Tests
             return settings;
         }
 
-        // ДП-розбиття дає розмір не більший, ніж розбиття фіксованим блоком
+        // Кейс D1 номер 14: ДП-розбиття дає розмір не більший, ніж розбиття фіксованим блоком
         [Fact]
         public void DpSplitNeverBiggerThanFixedBlocks()
         {
@@ -160,6 +160,20 @@ namespace SimpleArchiver.Tests
             // Порожній файл - усі ознаки нульові
             foreach (double feature in FileFeatures.Compute(new byte[0]))
                 Assert.Equal(0.0, feature);
+        }
+
+        // Перцептрон
+
+        // Градієнт перцептрона збігається з чисельним
+        [Fact]
+        public void MlpGradientMatchesNumeric()
+        {
+            var net = new Mlp(new[] { FileFeatures.Count, 6, 7 }, 1);
+            double[] x = FileFeatures.Compute(SyntheticFiles.Csv(2000, 1));
+            var target = new double[7];
+            target[2] = 1;
+
+            Assert.True(net.GradientCheck(x, target) < 1e-7);
         }
     }
 }
