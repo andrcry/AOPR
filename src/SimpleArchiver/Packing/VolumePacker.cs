@@ -116,6 +116,7 @@ namespace SimpleArchiver
         )
         {
             var payload = new Payload();
+            payload.Flags = settings.UsePrediction ? Payload.PredictionFlag : 0;
             var localIndex = new Dictionary<int, int>();
 
             foreach (int f in fileNumbers)

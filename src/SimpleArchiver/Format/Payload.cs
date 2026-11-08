@@ -6,9 +6,13 @@ namespace SimpleArchiver
     // file_count, flags, reserved, таблиця файлів, block_count, таблиця блоків, дані блоків
     public class Payload
     {
+        public const int PredictionFlag = 0x01; // біт 0 - PREDICTION, наше командне розширення
+
         public int Flags { get; set; } // прапорці тому
         public List<FileRecord> Files { get; set; } = new List<FileRecord>(); // таблиця файлів цього тому
         public List<BlockRecord> Blocks { get; set; } = new List<BlockRecord>(); // блоки цього тому
+
+        public bool UsesPrediction => (Flags & PredictionFlag) != 0; // true, якщо в томі використано прогноз байта
 
         // Записує навантаження в байти у порядку специфікації
         public byte[] ToBytes()
@@ -66,7 +70,7 @@ namespace SimpleArchiver
 
             if (reserved != 0)
                 throw new ArchiveException(ErrorCodes.Payload, "поле reserved не дорівнює 0");
-            if (payload.Flags != 0)
+            if ((payload.Flags & ~PredictionFlag) != 0)
                 throw new ArchiveException(ErrorCodes.Payload, "невідомі прапорці flags");
 
             // Таблиця файлів

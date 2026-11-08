@@ -270,5 +270,102 @@ namespace SimpleArchiver.Tests
                 File.Delete(path);
             }
         }
+
+        // Прогноз наступного байта
+
+        // Плавні дані, як рядок растру: сусідні байти майже однакові
+        static byte[] SmoothData(int count)
+        {
+            var data = new byte[count];
+            for (int i = 0; i < count; i++)
+                data[i] = (byte)(128 + 100 * Math.Sin(i / 40.0) + 20 * Math.Sin(i / 7.0));
+            return data;
+        }
+
+        // Із залишків прогнозу відновлюються ті самі дані
+        [Fact]
+        public void PredictorResidualsRestoreData()
+        {
+            var samples = new List<byte[]>();
+            samples.Add(SmoothData(5000));
+            samples.Add(TestHelpers.RandomBytes(3000, 9));
+            samples.Add(SyntheticFiles.Text(3000, 10));
+            samples.Add(new byte[] { 1 });
+
+            foreach (byte[] data in samples)
+            {
+                BytePredictor predictor = BytePredictor.Train(data, 4);
+                Assert.Equal(data, predictor.Restore(predictor.MakeResiduals(data)));
+            }
+        }
+
+        // Кейси D1 номер 15 і номер 16: з прогнозом файл відновлюється, а на плавних даних архів менший
+        [Fact]
+        public void PredictorSmallerArchiveOnSmoothData()
+        {
+            byte[] data = SmoothData(60000);
+
+            var plain = new Settings();
+            var predicted = new Settings();
+            predicted.UsePrediction = true;
+
+            List<byte[]> plainVolumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("row.bmp", data),
+                TestHelpers.Password,
+                plain
+            );
+            List<byte[]> predictedVolumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("row.bmp", data),
+                TestHelpers.Password,
+                predicted
+            );
+
+            Assert.True(predictedVolumes[0].Length < plainVolumes[0].Length);
+            Assert.Equal(
+                data,
+                ArchiveReader.ReadArchive(predictedVolumes, TestHelpers.Password)[0].Data
+            );
+        }
+
+        // Неправильний заголовок прогнозу відхиляється
+        [Fact]
+        public void PredictorBadHeaderIsRejected()
+        {
+            byte[] data = Encoding.ASCII.GetBytes("abc");
+
+            var file = new FileRecord();
+            file.Name = "abc.txt";
+            file.OriginalSize = data.Length;
+            file.Crc = Crc32.Compute(data);
+
+            var block = new BlockRecord();
+            block.RawLength = data.Length;
+            block.Data = new byte[] { 200, 0, 0 }; // k = 200 - більше за дозволені 16
+
+            var payload = new Payload();
+            payload.Flags = Payload.PredictionFlag;
+            payload.Files.Add(file);
+            payload.Blocks.Add(block);
+
+            byte[] volume = TestHelpers.SealPayload(payload.ToBytes());
+            Assert.Equal(
+                ErrorCodes.Code,
+                TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
+            );
+        }
+
+        // Невідомий прапорець тому відхиляється
+        [Fact]
+        public void PayloadUnknownFlagIsRejected()
+        {
+            byte[] payload = new Payload().ToBytes();
+            payload[2] = 0x02; // невідомий біт flags
+
+            byte[] volume = TestHelpers.SealPayload(payload);
+            Assert.Equal(
+                ErrorCodes.Payload,
+                TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
+            );
+        }
     }
 }

@@ -72,7 +72,7 @@ namespace SimpleArchiver
             // Розкласти блоки по томах (рюкзак)
             List<Payload> payloads = VolumePacker.Pack(records, blocks, settings);
 
-            // Крок 4. Зашифрувати і запломбувати кожен том
+            // Зашифрувати і запломбувати кожен том
             Keys keys = Keys.Derive(password, salt); // один раз на весь архів
 
             var volumes = new List<byte[]>();
@@ -109,7 +109,23 @@ namespace SimpleArchiver
             // Варіант 1. LZ77 + Гаффман
             byte[] best = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
 
-            // Варіант 2. Без стиснення, якщо інакше не коротше (NO_COMPRESSION)
+            // Варіант 2. Прогноз байта: стискаємо залишки замість байтів
+            if (settings.UsePrediction)
+            {
+                best = Join(BytePredictor.NoPredictionHeader(), best);
+
+                BytePredictor predictor = BytePredictor.Train(raw, settings.HistoryLength);
+                byte[] residuals = predictor.MakeResiduals(raw);
+                byte[] withPrediction = Join(
+                    predictor.ToBytes(),
+                    BlockCoder.Encode(Lz77.Parse(residuals, settings.Parser, settings.MaxChain))
+                );
+
+                if (withPrediction.Length < best.Length)
+                    best = withPrediction;
+            }
+
+            // Варіант 3. Без стиснення, якщо інакше не коротше (NO_COMPRESSION)
             if (best.Length < raw.Length)
             {
                 block.Data = best;
@@ -117,6 +133,15 @@ namespace SimpleArchiver
             }
 
             return block;
+        }
+
+        // Склеює два масиви байтів в один
+        static byte[] Join(byte[] first, byte[] second)
+        {
+            var result = new byte[first.Length + second.Length];
+            Array.Copy(first, 0, result, 0, first.Length);
+            Array.Copy(second, 0, result, first.Length, second.Length);
+            return result;
         }
 
         // nonce = 8 байтів архіву + номер тому. Так nonce різний для кожного тому
