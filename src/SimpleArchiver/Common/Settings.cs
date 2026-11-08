@@ -12,6 +12,9 @@ namespace SimpleArchiver
         public ParserKind Parser { get; set; } = ParserKind.Lazy;
         public int MaxChain { get; set; } = 64; // скільки кандидатів перевіряти при пошуку збігу
 
+        // Аналіз файлу
+        public string? ClassifierPath { get; set; } // файл з вагами перцептрона, null - не класифікувати
+
         // Томи
         public int MaxVolumeBytes { get; set; } = 1048576; // max_volume_bytes
         public bool UseDpKnapsack { get; set; } = true; // true - рюкзак ДП, false - жадібний

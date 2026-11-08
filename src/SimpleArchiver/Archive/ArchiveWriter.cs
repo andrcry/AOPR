@@ -3,7 +3,7 @@ using System.Text;
 
 namespace SimpleArchiver
 {
-    // Створює архів: ріже файл на блоки, стискає їх LZ77 і Гаффманом,
+    // Створює архів: визначає тип файла, ріже файл на блоки, стискає їх LZ77 і Гаффманом,
     // розкладає по томах, шифрує AES і ставить пломбу HMAC
     public static class ArchiveWriter
     {
@@ -30,6 +30,10 @@ namespace SimpleArchiver
         {
             CheckFiles(files);
 
+            FileClassifier? classifier = null;
+            if (settings.ClassifierPath != null)
+                classifier = FileClassifier.Load(settings.ClassifierPath);
+
             var records = new List<FileRecord>();
             var blocks = new List<PreparedBlock>();
 
@@ -37,18 +41,25 @@ namespace SimpleArchiver
             {
                 byte[] data = files[fileNumber].Data;
 
-                // Запис таблиці файлів
+                // Тип файла визначає перцептрон
+                int fileType = classifier == null ? 0 : classifier.Classify(data);
+
+                // Вже стиснуті файли (JPEG, ZIP, MP3) немає сенсу стискати ще раз
+                bool compress = fileType != FileClassifier.AlreadyCompressed;
+
                 var record = new FileRecord();
                 record.Name = files[fileNumber].Name;
                 record.OriginalSize = data.Length;
                 record.Crc = Crc32.Compute(data);
-                record.Strategy = (int)settings.Parser;
+                record.FileType = fileType;
+                record.Strategy = compress ? (int)settings.Parser : 0;
                 records.Add(record);
 
                 // Розбиття на блоки: фіксоване або ДП
-                List<PreparedBlock> fileBlocks = settings.UseDpBlockSplit
-                    ? BlockSplitter.SplitDp(data, settings)
-                    : BlockSplitter.SplitFixed(data, settings, true);
+                List<PreparedBlock> fileBlocks =
+                    compress && settings.UseDpBlockSplit
+                        ? BlockSplitter.SplitDp(data, settings)
+                        : BlockSplitter.SplitFixed(data, settings, compress);
 
                 for (int b = 0; b < fileBlocks.Count; b++)
                 {
@@ -61,7 +72,7 @@ namespace SimpleArchiver
             // Розкласти блоки по томах (рюкзак)
             List<Payload> payloads = VolumePacker.Pack(records, blocks, settings);
 
-            // Зашифрувати і запломбувати кожен том
+            // Крок 4. Зашифрувати і запломбувати кожен том
             Keys keys = Keys.Derive(password, salt); // один раз на весь архів
 
             var volumes = new List<byte[]>();
@@ -84,8 +95,7 @@ namespace SimpleArchiver
         public static PreparedBlock EncodeBlock(byte[] raw, Settings settings) =>
             EncodeBlock(raw, settings, true);
 
-        // Кодує один блок LZ77 і Гаффманом. Якщо стиснення заборонене або закодований блок
-        // не коротший за сирий, зберігає сирий (NO_COMPRESSION)
+        // Кодує один блок. Пробує всі дозволені варіанти і бере найкоротший
         public static PreparedBlock EncodeBlock(byte[] raw, Settings settings, bool compress)
         {
             var block = new PreparedBlock();
@@ -96,11 +106,13 @@ namespace SimpleArchiver
             if (!compress)
                 return block;
 
-            byte[] coded = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
+            // Варіант 1. LZ77 + Гаффман
+            byte[] best = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
 
-            if (coded.Length < raw.Length)
+            // Варіант 2. Без стиснення, якщо інакше не коротше (NO_COMPRESSION)
+            if (best.Length < raw.Length)
             {
-                block.Data = coded;
+                block.Data = best;
                 block.Flags = 0;
             }
 

@@ -225,5 +225,50 @@ namespace SimpleArchiver.Tests
                 File.Delete(path);
             }
         }
+
+        // Вже стиснутий файл записується без стиснення
+        [Fact]
+        public void ClassifierAlreadyCompressedFileIsStoredWithoutCompression()
+        {
+            string path = Path.GetTempFileName();
+            SyntheticFiles.TrainClassifier().Save(path);
+
+            try
+            {
+                var settings = new Settings();
+                settings.ClassifierPath = path;
+
+                var input = new List<ArchiveFile>();
+                input.Add(new ArchiveFile("text.txt", SyntheticFiles.Text(8000, 50)));
+                input.Add(new ArchiveFile("photo.jpg", TestHelpers.RandomBytes(8000, 51)));
+
+                var salt = new byte[16];
+                List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                    input,
+                    TestHelpers.Password,
+                    settings,
+                    salt,
+                    new byte[8]
+                );
+
+                // Розшифровуємо том і дивимося, що записав класифікатор
+                VolumeHeader header = VolumeHeader.Parse(volumes[0]);
+                Payload payload = Payload.Parse(
+                    Volume.Open(volumes[0], header, Keys.Derive(TestHelpers.Password, salt))
+                );
+
+                Assert.Equal(0, payload.Files[0].FileType);
+                Assert.Equal(FileClassifier.AlreadyCompressed, payload.Files[1].FileType);
+                Assert.Equal(0, payload.Files[1].Strategy);
+
+                List<ArchiveFile> output = ArchiveReader.ReadArchive(volumes, TestHelpers.Password);
+                Assert.Equal(input[0].Data, output[0].Data);
+                Assert.Equal(input[1].Data, output[1].Data);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
     }
 }
