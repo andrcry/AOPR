@@ -135,5 +135,31 @@ namespace SimpleArchiver.Tests
             }
             Assert.True(rejected);
         }
+
+        // Ознаки файла
+
+        // Ознаки мають очікувані значення
+        [Fact]
+        public void FeaturesHaveExpectedValues()
+        {
+            Assert.Equal(52, FileFeatures.Compute(SyntheticFiles.Text(1000, 1)).Length);
+
+            // Однакові байти - ентропія 0; усі 256 значень порівну - ентропія 8 бітів
+            Assert.Equal(0.0, FileFeatures.ByteEntropy(new byte[1000]));
+
+            var allBytes = new byte[256 * 4];
+            for (int i = 0; i < allBytes.Length; i++)
+                allBytes[i] = (byte)i;
+            Assert.Equal(8.0, FileFeatures.ByteEntropy(allBytes), 6);
+
+            Assert.Equal(
+                1.0,
+                FileFeatures.PrintableShare(Encoding.ASCII.GetBytes("Hello, world!\n"))
+            );
+
+            // Порожній файл - усі ознаки нульові
+            foreach (double feature in FileFeatures.Compute(new byte[0]))
+                Assert.Equal(0.0, feature);
+        }
     }
 }
