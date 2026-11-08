@@ -3,7 +3,7 @@ using System.Text;
 
 namespace SimpleArchiver
 {
-    // Створює архів з одного тому: ріже файли на блоки, кодує блоки Гаффманом,
+    // Створює архів з одного тому: ріже файли на блоки, стискає блоки LZ77 і Гаффманом,
     // збирає навантаження, шифрує AES і ставить пломбу HMAC
     public static class ArchiveWriter
     {
@@ -47,7 +47,7 @@ namespace SimpleArchiver
                 record.OriginalSize = data.Length;
                 record.Crc = Crc32.Compute(data);
                 record.FileType = 0; // тип визначатиме перцептрон на чекпоінті 2
-                record.Strategy = 1; // 1 - блоки закодовано Гаффманом
+                record.Strategy = (int)settings.Parser; // спосіб розбору LZ77: 1 - жадібний, 2 - лінивий
                 payload.Files.Add(record);
 
                 // Крок 2. Ріжемо файл на блоки і кодуємо кожен. Порожній файл блоків не має
@@ -58,7 +58,7 @@ namespace SimpleArchiver
                     var chunk = new byte[size];
                     Array.Copy(data, offset, chunk, 0, size);
 
-                    BlockRecord block = EncodeBlock(chunk);
+                    BlockRecord block = EncodeBlock(chunk, settings);
                     block.FileIndex = fileIndex;
                     block.BlockNumber = blockNumber;
                     payload.Blocks.Add(block);
@@ -86,10 +86,10 @@ namespace SimpleArchiver
             return volumes;
         }
 
-        // Кодує один блок Гаффманом. Якщо закодований блок не коротший за сирий, зберігає сирий (NO_COMPRESSION)
-        public static BlockRecord EncodeBlock(byte[] raw)
+        // Кодує один блок LZ77 і Гаффманом. Якщо закодований блок не коротший за сирий, зберігає сирий (NO_COMPRESSION)
+        public static BlockRecord EncodeBlock(byte[] raw, Settings settings)
         {
-            byte[] coded = BlockCoder.Encode(BlockCoder.LiteralsOnly(raw));
+            byte[] coded = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
 
             var block = new BlockRecord();
             block.RawLength = raw.Length;

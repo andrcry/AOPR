@@ -182,24 +182,11 @@ namespace SimpleArchiver.Tests
 
         // Кодування блока
 
-        // Елементи блока hello.txt з розділу 8 специфікації: 12 літералів "hello world "
-        // і два посилання на 12 байтів назад. На чекпоінті 1 пошуку повторів ще немає,
-        // тому елементи складено вручну, щоб перевірити саме формат блока і коди Гаффмана
-        static List<Token> SpecificationTokens()
-        {
-            var tokens = new List<Token>();
-            foreach (char c in "hello world ")
-                tokens.Add(Token.MakeLiteral((byte)c));
-            tokens.Add(Token.MakeMatch(258, 12));
-            tokens.Add(Token.MakeMatch(210, 12));
-            return tokens;
-        }
-
         // Блок hello.txt збігається з прикладом специфікації
         [Fact]
         public void BlockCoderMatchesSpecificationExample()
         {
-            List<Token> tokens = SpecificationTokens();
+            List<Token> tokens = Lz77.ParseGreedy(TestHelpers.Hello480(), 64);
             byte[] block = BlockCoder.Encode(tokens);
 
             Assert.Equal(14, tokens.Count);
@@ -233,7 +220,7 @@ namespace SimpleArchiver.Tests
         public void BlockCoderDistanceLimits()
         {
             byte[] start = TestHelpers.RandomBytes(32768, 11);
-            List<Token> tokens = BlockCoder.LiteralsOnly(start);
+            List<Token> tokens = Lz77.ParseLiteralsOnly(start);
             tokens.Add(Token.MakeMatch(3, 32768));
             tokens.Add(Token.MakeMatch(3, 32767));
 
@@ -243,7 +230,7 @@ namespace SimpleArchiver.Tests
             Assert.Equal(start[1], restored[32769]);
             Assert.Equal(start[2], restored[32770]);
 
-            List<Token> tooFar = BlockCoder.LiteralsOnly(TestHelpers.RandomBytes(32769, 12));
+            List<Token> tooFar = Lz77.ParseLiteralsOnly(TestHelpers.RandomBytes(32769, 12));
             tooFar.Add(Token.MakeMatch(3, 32769));
 
             bool rejected = false;
@@ -267,7 +254,7 @@ namespace SimpleArchiver.Tests
         public void BlockCoderLiteralsOnlyRoundTrip()
         {
             byte[] data = Encoding.UTF8.GetBytes("Привіт, світе! Hello!");
-            byte[] block = BlockCoder.Encode(BlockCoder.LiteralsOnly(data));
+            byte[] block = BlockCoder.Encode(Lz77.ParseLiteralsOnly(data));
 
             Assert.Equal(data, BlockCoder.Decode(block, data.Length));
         }
@@ -277,7 +264,7 @@ namespace SimpleArchiver.Tests
         public void RandomNoiseIsStoredWithoutCompression()
         {
             byte[] noise = TestHelpers.RandomBytes(10000, 1);
-            BlockRecord block = ArchiveWriter.EncodeBlock(noise);
+            BlockRecord block = ArchiveWriter.EncodeBlock(noise, TestHelpers.DefaultSettings());
 
             Assert.Equal(BlockRecord.NoCompressionFlag, block.Flags);
             Assert.Equal(noise.Length, block.Data.Length);
@@ -308,51 +295,19 @@ namespace SimpleArchiver.Tests
                 0x0E,
                 0x0F,
             };
-            byte[] nonce =
-            {
-                0x01,
-                0x02,
-                0x03,
-                0x04,
-                0x05,
-                0x06,
-                0x07,
-                0x08,
-                0x00,
-                0x00,
-                0x00,
-                0x00,
-            };
+            byte[] noncePrefix = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 };
+            var settings = TestHelpers.DefaultSettings();
+            settings.Parser = ParserKind.Greedy; // у прикладі strategy = 1
 
-            // Навантаження як у розділі 8: один файл hello.txt, один блок з елементами прикладу
-            var file = new FileRecord();
-            file.Name = "hello.txt";
-            file.OriginalSize = 480;
-            file.Crc = Crc32.Compute(TestHelpers.Hello480());
-            file.FileType = 0;
-            file.Strategy = 1;
-
-            var block = new BlockRecord();
-            block.RawLength = 480;
-            block.Data = BlockCoder.Encode(SpecificationTokens());
-
-            var payload = new Payload();
-            payload.Files.Add(file);
-            payload.Blocks.Add(block);
-            Assert.Equal(99, payload.ToBytes().Length);
-
-            var volumes = new List<byte[]>();
-            volumes.Add(
-                Volume.Seal(
-                    0,
-                    1,
-                    salt,
-                    nonce,
-                    payload.ToBytes(),
-                    Keys.Derive(TestHelpers.Password, salt)
-                )
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("hello.txt", TestHelpers.Hello480()),
+                TestHelpers.Password,
+                settings,
+                salt,
+                noncePrefix
             );
 
+            Assert.Single(volumes);
             Assert.Equal(172, volumes[0].Length);
 
             // Заголовок байт у байт як у розділі 8
@@ -450,7 +405,7 @@ namespace SimpleArchiver.Tests
             Assert.Equal(new byte[] { 42 }, output[1].Data);
         }
 
-        // Однакові байти стискаються більш ніж у 5 разів (Гаффман без LZ77 дає щонайбільше 8 разів)
+        // Однакові байти стискаються більш ніж у 10 разів
         [Fact]
         public void ArchiveSameBytesCompressManyTimes()
         {
@@ -464,7 +419,7 @@ namespace SimpleArchiver.Tests
                 TestHelpers.DefaultSettings()
             );
 
-            Assert.True(volumes[0].Length * 5 < data.Length);
+            Assert.True(volumes[0].Length * 10 < data.Length);
             Assert.Equal(data, ArchiveReader.ReadArchive(volumes, TestHelpers.Password)[0].Data);
         }
 
@@ -485,7 +440,7 @@ namespace SimpleArchiver.Tests
 
             Assert.Equal(new byte[20000], output[0].Data);
             Assert.Equal(Encoding.ASCII.GetBytes("ab"), output[1].Data);
-            Assert.True(volumes[0].Length < 4000);
+            Assert.True(volumes[0].Length < 1000);
         }
 
         // Захист

@@ -9,7 +9,7 @@ namespace SimpleArchiver
         public int OriginalSize { get; set; } // розмір цілого файла
         public uint Crc { get; set; } // CRC32 цілого файла
         public int FileType { get; set; } // 0-6, поки завжди 0
-        public int Strategy { get; set; } // 1 - блоки закодовано Гаффманом
+        public int Strategy { get; set; } // 1 - жадібний LZ77, 2 - лінивий
 
         // Скільки байтів займає запис у таблиці файлів
         public int SizeInTable() => 2 + Encoding.UTF8.GetByteCount(Name) + 4 + 4 + 1 + 1;
