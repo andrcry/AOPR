@@ -2,6 +2,7 @@ using System.Text;
 
 namespace SimpleArchiver.Tests
 {
+    // Просунуті рівні: ДП-розбір LZ77, ДП-розбиття на блоки, класифікатор типу файла, прогноз байта
     public class Stage3Tests
     {
         // ДП-розбір за фіксованими вартостями

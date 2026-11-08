@@ -99,5 +99,75 @@ namespace SimpleArchiver.Tests
 
             return data;
         }
+
+        // Рюкзак
+
+        // ДП-рюкзак кращий за жадібний на класичному прикладі
+        [Fact]
+        public void KnapsackDpBeatsGreedyOnClassicExample()
+        {
+            // Місткість 10. Жадібний бере перший предмет (7/6) і більше нічого. ДП бере два інші
+            int[] weights = { 6, 5, 5 };
+            int[] values = { 7, 5, 5 };
+
+            Assert.Equal(7, Knapsack.TotalValue(Knapsack.SolveGreedy(weights, values, 10), values));
+            Assert.Equal(10, Knapsack.TotalValue(Knapsack.SolveDp(weights, values, 10), values));
+        }
+
+        // ДП-рюкзак точний і не гірший за жадібний
+        [Fact]
+        public void KnapsackDpIsExactAndNeverWorseThanGreedy()
+        {
+            var random = new Random(42);
+
+            for (int test = 0; test < 200; test++)
+            {
+                int n = random.Next(1, 11);
+                var weights = new int[n];
+                var values = new int[n];
+                for (int i = 0; i < n; i++)
+                {
+                    weights[i] = random.Next(1, 30);
+                    values[i] = random.Next(1, 20);
+                }
+                int capacity = random.Next(0, 80);
+
+                List<int> dp = Knapsack.SolveDp(weights, values, capacity);
+                List<int> greedy = Knapsack.SolveGreedy(weights, values, capacity);
+
+                Assert.True(Knapsack.TotalWeight(dp, weights) <= capacity);
+                Assert.True(Knapsack.TotalWeight(greedy, weights) <= capacity);
+                Assert.True(Knapsack.TotalValue(dp, values) >= Knapsack.TotalValue(greedy, values));
+                Assert.Equal(
+                    BruteForceBest(weights, values, capacity),
+                    Knapsack.TotalValue(dp, values)
+                );
+            }
+        }
+
+        // Повний перебір усіх 2^n варіантів, щоб перевірити ДП
+        static long BruteForceBest(int[] weights, int[] values, int capacity)
+        {
+            long best = 0;
+
+            for (int mask = 0; mask < (1 << weights.Length); mask++)
+            {
+                long weight = 0;
+                long value = 0;
+                for (int i = 0; i < weights.Length; i++)
+                {
+                    if ((mask & (1 << i)) == 0)
+                        continue;
+
+                    weight += weights[i];
+                    value += values[i];
+                }
+
+                if (weight <= capacity && value > best)
+                    best = value;
+            }
+
+            return best;
+        }
     }
 }
