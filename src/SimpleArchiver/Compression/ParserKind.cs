@@ -6,5 +6,6 @@ namespace SimpleArchiver
     {
         Greedy = 1, // жадібний
         Lazy = 2, // лінива жадібність
+        Dp = 3, // ДП за фіксованими вартостями
     }
 }
