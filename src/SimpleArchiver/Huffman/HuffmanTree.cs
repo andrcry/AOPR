@@ -31,7 +31,7 @@ namespace SimpleArchiver
         {
             var lengths = new int[freq.Length];
 
-            // Крок 1. Черга з пріоритетом
+            // Черга з пріоритетом
             // Другий ключ - порядок вставки, щоб при однакових частотах результат був завжди однаковий
             var queue = new PriorityQueue<HuffmanNode, (long Weight, int Order)>();
             int order = 0;
@@ -55,7 +55,7 @@ namespace SimpleArchiver
                 return lengths;
             }
 
-            // Крок 2. Злиття двох найменших вузлів, доки не залишиться один
+            // Злиття двох найменших вузлів, доки не залишиться один
             while (queue.Count > 1)
             {
                 HuffmanNode a = queue.Dequeue();
@@ -69,7 +69,7 @@ namespace SimpleArchiver
                 queue.Enqueue(parent, (parent.Weight, order++));
             }
 
-            // Крок 3. Довжина коду = глибина листка
+            // Довжина коду = глибина листка
             SaveDepths(queue.Dequeue(), 0, lengths);
             return lengths;
         }

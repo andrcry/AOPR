@@ -8,22 +8,6 @@ namespace SimpleArchiver
         public const int DistanceAlphabet = 16; // код відстані 0-15
         public const int MatchMarker = 256; // символ LIT, після якого йде посилання
 
-        public const int MinMatch = 3; // найкоротше посилання за специфікацією
-        public const int MaxMatch = 258; // найдовше посилання за специфікацією
-        public const int WindowSize = 32768; // найбільша відстань посилання за специфікацією
-
-        // Перетворює байти на список літералів: кожен байт - окремий елемент блока.
-        // На чекпоінті 1 пошуку повторів (LZ77) ще немає, тому блок складається лише з літералів
-        public static List<Token> LiteralsOnly(byte[] data)
-        {
-            var tokens = new List<Token>();
-
-            foreach (byte b in data)
-                tokens.Add(Token.MakeLiteral(b));
-
-            return tokens;
-        }
-
         // Код відстані - скільки бітів займає число distance - 1. Наприклад, для відстані 12 це число 11,
         // у двійковому вигляді 1011, тобто 4 біти, і код дорівнює 4
         public static int DistanceCode(int distance)
@@ -56,13 +40,13 @@ namespace SimpleArchiver
                     continue;
                 }
 
-                if (token.Length < MinMatch || token.Length > MaxMatch)
+                if (token.Length < Lz77.MinMatch || token.Length > Lz77.MaxMatch)
                     throw new ArgumentException($"неправильна довжина посилання {token.Length}");
-                if (token.Distance < 1 || token.Distance > WindowSize)
+                if (token.Distance < 1 || token.Distance > Lz77.WindowSize)
                     throw new ArgumentException($"неправильна відстань посилання {token.Distance}");
 
                 literalCounts[MatchMarker]++;
-                lengthCounts[token.Length - MinMatch]++;
+                lengthCounts[token.Length - Lz77.MinMatch]++;
                 distanceCounts[DistanceCode(token.Distance)]++;
             }
 
@@ -86,7 +70,7 @@ namespace SimpleArchiver
                     continue;
                 }
 
-                int lengthSymbol = token.Length - MinMatch;
+                int lengthSymbol = token.Length - Lz77.MinMatch;
                 int distanceCode = DistanceCode(token.Distance);
                 int extraBits = distanceCode - 1;
 
@@ -154,7 +138,7 @@ namespace SimpleArchiver
                     continue;
                 }
 
-                int length = lengthDecoder.ReadSymbol(bits) + MinMatch;
+                int length = lengthDecoder.ReadSymbol(bits) + Lz77.MinMatch;
                 int code = distanceDecoder.ReadSymbol(bits);
                 int distance =
                     code <= 1 ? code + 1 : ((1 << (code - 1)) | bits.ReadBits(code - 1)) + 1;

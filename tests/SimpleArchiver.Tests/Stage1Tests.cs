@@ -182,24 +182,11 @@ namespace SimpleArchiver.Tests
 
         // Кодування блока
 
-        // Елементи блока hello.txt з розділу 8 специфікації: 12 літералів "hello world "
-        // і два посилання на 12 байтів назад. На чекпоінті 1 пошуку повторів ще немає,
-        // тому елементи складено вручну, щоб перевірити саме формат блока і коди Гаффмана
-        static List<Token> SpecificationTokens()
-        {
-            var tokens = new List<Token>();
-            foreach (char c in "hello world ")
-                tokens.Add(Token.MakeLiteral((byte)c));
-            tokens.Add(Token.MakeMatch(258, 12));
-            tokens.Add(Token.MakeMatch(210, 12));
-            return tokens;
-        }
-
         // Блок hello.txt збігається з прикладом специфікації
         [Fact]
         public void BlockCoderMatchesSpecificationExample()
         {
-            List<Token> tokens = SpecificationTokens();
+            List<Token> tokens = Lz77.ParseGreedy(TestHelpers.Hello480(), 64);
             byte[] block = BlockCoder.Encode(tokens);
 
             Assert.Equal(14, tokens.Count);
@@ -233,7 +220,7 @@ namespace SimpleArchiver.Tests
         public void BlockCoderDistanceLimits()
         {
             byte[] start = TestHelpers.RandomBytes(32768, 11);
-            List<Token> tokens = BlockCoder.LiteralsOnly(start);
+            List<Token> tokens = Lz77.ParseLiteralsOnly(start);
             tokens.Add(Token.MakeMatch(3, 32768));
             tokens.Add(Token.MakeMatch(3, 32767));
 
@@ -243,7 +230,7 @@ namespace SimpleArchiver.Tests
             Assert.Equal(start[1], restored[32769]);
             Assert.Equal(start[2], restored[32770]);
 
-            List<Token> tooFar = BlockCoder.LiteralsOnly(TestHelpers.RandomBytes(32769, 12));
+            List<Token> tooFar = Lz77.ParseLiteralsOnly(TestHelpers.RandomBytes(32769, 12));
             tooFar.Add(Token.MakeMatch(3, 32769));
 
             bool rejected = false;
@@ -267,9 +254,20 @@ namespace SimpleArchiver.Tests
         public void BlockCoderLiteralsOnlyRoundTrip()
         {
             byte[] data = Encoding.UTF8.GetBytes("Привіт, світе! Hello!");
-            byte[] block = BlockCoder.Encode(BlockCoder.LiteralsOnly(data));
+            byte[] block = BlockCoder.Encode(Lz77.ParseLiteralsOnly(data));
 
             Assert.Equal(data, BlockCoder.Decode(block, data.Length));
+        }
+
+        // Шум зберігається без стиснення
+        [Fact]
+        public void RandomNoiseIsStoredWithoutCompression()
+        {
+            byte[] noise = TestHelpers.RandomBytes(10000, 1);
+            PreparedBlock block = ArchiveWriter.EncodeBlock(noise, TestHelpers.DefaultSettings());
+
+            Assert.Equal(BlockRecord.NoCompressionFlag, block.Flags);
+            Assert.Equal(noise.Length, block.Data.Length);
         }
 
         // Цілий архів
@@ -297,51 +295,19 @@ namespace SimpleArchiver.Tests
                 0x0E,
                 0x0F,
             };
-            byte[] nonce =
-            {
-                0x01,
-                0x02,
-                0x03,
-                0x04,
-                0x05,
-                0x06,
-                0x07,
-                0x08,
-                0x00,
-                0x00,
-                0x00,
-                0x00,
-            };
+            byte[] noncePrefix = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 };
+            var settings = TestHelpers.DefaultSettings();
+            settings.Parser = ParserKind.Greedy; // у прикладі strategy = 1
 
-            // Навантаження як у розділі 8: один файл hello.txt, один блок з елементами прикладу
-            var file = new FileRecord();
-            file.Name = "hello.txt";
-            file.OriginalSize = 480;
-            file.Crc = Crc32.Compute(TestHelpers.Hello480());
-            file.FileType = 0;
-            file.Strategy = 1;
-
-            var block = new BlockRecord();
-            block.RawLength = 480;
-            block.Data = BlockCoder.Encode(SpecificationTokens());
-
-            var payload = new Payload();
-            payload.Files.Add(file);
-            payload.Blocks.Add(block);
-            Assert.Equal(99, payload.ToBytes().Length);
-
-            var volumes = new List<byte[]>();
-            volumes.Add(
-                Volume.Seal(
-                    0,
-                    1,
-                    salt,
-                    nonce,
-                    payload.ToBytes(),
-                    Keys.Derive(TestHelpers.Password, salt)
-                )
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("hello.txt", TestHelpers.Hello480()),
+                TestHelpers.Password,
+                settings,
+                salt,
+                noncePrefix
             );
 
+            Assert.Single(volumes);
             Assert.Equal(172, volumes[0].Length);
 
             // Заголовок байт у байт як у розділі 8
@@ -393,13 +359,244 @@ namespace SimpleArchiver.Tests
             Array.Copy(volumes[0], header, 41);
             Assert.Equal(expectedHeader, header);
 
-            // Розархіватора ще немає, тому розшифровуємо том і читаємо навантаження вручну
-            VolumeHeader parsed = VolumeHeader.Parse(volumes[0]);
-            Payload restored = Payload.Parse(
-                Volume.Open(volumes[0], parsed, Keys.Derive(TestHelpers.Password, salt))
+            List<ArchiveFile> files = ArchiveReader.ReadArchive(volumes, TestHelpers.Password);
+            Assert.Equal("hello.txt", files[0].Name);
+            Assert.Equal(TestHelpers.Hello480(), files[0].Data);
+        }
+
+        // Текстовий файл відновлюється побайтово
+        [Fact]
+        public void ArchiveTextFileRestoredByteForByte()
+        {
+            byte[] text = Encoding.UTF8.GetBytes(
+                "Алгоритми і оптимізація. Алгоритми і оптимізація. Кінець."
             );
-            Assert.Equal("hello.txt", restored.Files[0].Name);
-            Assert.Equal(TestHelpers.Hello480(), BlockCoder.Decode(restored.Blocks[0].Data, 480));
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("text.txt", text),
+                TestHelpers.Password,
+                TestHelpers.DefaultSettings()
+            );
+
+            List<ArchiveFile> files = ArchiveReader.ReadArchive(volumes, TestHelpers.Password);
+
+            Assert.Single(files);
+            Assert.Equal("text.txt", files[0].Name);
+            Assert.Equal(text, files[0].Data);
+        }
+
+        // Порожній файл і файл з одного байта відновлюються
+        [Fact]
+        public void ArchiveEmptyFileAndOneByteFile()
+        {
+            var input = new List<ArchiveFile>();
+            input.Add(new ArchiveFile("empty.bin", new byte[0]));
+            input.Add(new ArchiveFile("one.bin", new byte[] { 42 }));
+
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                input,
+                TestHelpers.Password,
+                TestHelpers.DefaultSettings()
+            );
+            List<ArchiveFile> output = ArchiveReader.ReadArchive(volumes, TestHelpers.Password);
+
+            Assert.Equal(2, output.Count);
+            Assert.Equal("empty.bin", output[0].Name);
+            Assert.Empty(output[0].Data);
+            Assert.Equal(new byte[] { 42 }, output[1].Data);
+        }
+
+        // Однакові байти стискаються більш ніж у 10 разів
+        [Fact]
+        public void ArchiveSameBytesCompressManyTimes()
+        {
+            var data = new byte[100000];
+            for (int i = 0; i < data.Length; i++)
+                data[i] = (byte)'A';
+
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("aaa.txt", data),
+                TestHelpers.Password,
+                TestHelpers.DefaultSettings()
+            );
+
+            Assert.True(volumes[0].Length * 10 < data.Length);
+            Assert.Equal(data, ArchiveReader.ReadArchive(volumes, TestHelpers.Password)[0].Data);
+        }
+
+        // Методичка 10.63: файл з нулів і файл коротший за MIN_MATCH
+        [Fact]
+        public void ArchiveAllZeroFileAndTinyFile()
+        {
+            var input = new List<ArchiveFile>();
+            input.Add(new ArchiveFile("zeros.bin", new byte[20000]));
+            input.Add(new ArchiveFile("two.txt", Encoding.ASCII.GetBytes("ab")));
+
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                input,
+                TestHelpers.Password,
+                TestHelpers.DefaultSettings()
+            );
+            List<ArchiveFile> output = ArchiveReader.ReadArchive(volumes, TestHelpers.Password);
+
+            Assert.Equal(new byte[20000], output[0].Data);
+            Assert.Equal(Encoding.ASCII.GetBytes("ab"), output[1].Data);
+            Assert.True(volumes[0].Length < 1000);
+        }
+
+        // Захист
+
+        // Невірний пароль дає E_HMAC
+        [Fact]
+        public void ArchiveWrongPasswordGivesHmacError()
+        {
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("a.txt", TestHelpers.Hello480()),
+                TestHelpers.Password,
+                TestHelpers.DefaultSettings()
+            );
+
+            Assert.Equal(ErrorCodes.Hmac, TestHelpers.ErrorWhenReading(volumes, "wrong-password"));
+        }
+
+        // Змінений байт дає E_HMAC
+        [Fact]
+        public void ArchiveChangedByteGivesHmacError()
+        {
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("a.txt", TestHelpers.Hello480()),
+                TestHelpers.Password,
+                TestHelpers.DefaultSettings()
+            );
+
+            // Змінений байт шифротексту
+            byte[] changedData = TestHelpers.Copy(volumes[0]);
+            changedData[50] ^= 0x01;
+            Assert.Equal(
+                ErrorCodes.Hmac,
+                TestHelpers.ErrorWhenReading(changedData, TestHelpers.Password)
+            );
+
+            // Змінений байт пломби
+            byte[] changedTag = TestHelpers.Copy(volumes[0]);
+            changedTag[changedTag.Length - 1] ^= 0x01;
+            Assert.Equal(
+                ErrorCodes.Hmac,
+                TestHelpers.ErrorWhenReading(changedTag, TestHelpers.Password)
+            );
+
+            // Змінений байт солі
+            byte[] changedSalt = TestHelpers.Copy(volumes[0]);
+            changedSalt[10] ^= 0x01;
+            Assert.Equal(
+                ErrorCodes.Hmac,
+                TestHelpers.ErrorWhenReading(changedSalt, TestHelpers.Password)
+            );
+        }
+
+        // Обрізаний, короткий і чужий файл відхиляються
+        [Fact]
+        public void ArchiveTruncatedShortAndBadMagicAreRejected()
+        {
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("a.txt", TestHelpers.Hello480()),
+                TestHelpers.Password,
+                TestHelpers.DefaultSettings()
+            );
+
+            // Обрізаний на 5 байтів
+            var truncated = new byte[volumes[0].Length - 5];
+            Array.Copy(volumes[0], truncated, truncated.Length);
+            Assert.Equal(
+                ErrorCodes.Length,
+                TestHelpers.ErrorWhenReading(truncated, TestHelpers.Password)
+            );
+
+            // Коротший за 73 байти
+            Assert.Equal(
+                ErrorCodes.Short,
+                TestHelpers.ErrorWhenReading(new byte[72], TestHelpers.Password)
+            );
+
+            // Інший magic
+            byte[] badMagic = TestHelpers.Copy(volumes[0]);
+            badMagic[0] = (byte)'X';
+            Assert.Equal(
+                ErrorCodes.Magic,
+                TestHelpers.ErrorWhenReading(badMagic, TestHelpers.Password)
+            );
+
+            // Інша версія
+            byte[] badVersion = TestHelpers.Copy(volumes[0]);
+            badVersion[4] = 2;
+            Assert.Equal(
+                ErrorCodes.Magic,
+                TestHelpers.ErrorWhenReading(badVersion, TestHelpers.Password)
+            );
+
+            // ciphertext_len не відповідає справжній довжині
+            byte[] badLength = TestHelpers.Copy(volumes[0]);
+            badLength[40]++;
+            Assert.Equal(
+                ErrorCodes.Length,
+                TestHelpers.ErrorWhenReading(badLength, TestHelpers.Password)
+            );
+        }
+
+        // Небезпечне ім'я відхиляється
+        [Fact]
+        public void PayloadUnsafeNameIsRejected()
+        {
+            var file = new FileRecord();
+            file.Name = "../secret.txt";
+            var payload = new Payload();
+            payload.Files.Add(file);
+
+            byte[] volume = TestHelpers.SealPayload(payload.ToBytes());
+            Assert.Equal(
+                ErrorCodes.Payload,
+                TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
+            );
+        }
+
+        // Ненульове поле reserved відхиляється
+        [Fact]
+        public void PayloadNonZeroReservedIsRejected()
+        {
+            byte[] payload = new Payload().ToBytes();
+            payload[3] = 1; // reserved
+
+            byte[] volume = TestHelpers.SealPayload(payload);
+            Assert.Equal(
+                ErrorCodes.Payload,
+                TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
+            );
+        }
+
+        // Неправильний CRC32 дає E_CRC
+        [Fact]
+        public void PayloadWrongCrcIsRejected()
+        {
+            byte[] data = Encoding.ASCII.GetBytes("abc");
+
+            var file = new FileRecord();
+            file.Name = "abc.txt";
+            file.OriginalSize = data.Length;
+            file.Crc = Crc32.Compute(data) ^ 1; // навмисно неправильна
+
+            var block = new BlockRecord();
+            block.RawLength = data.Length;
+            block.Flags = BlockRecord.NoCompressionFlag;
+            block.Data = data;
+
+            var payload = new Payload();
+            payload.Files.Add(file);
+            payload.Blocks.Add(block);
+
+            byte[] volume = TestHelpers.SealPayload(payload.ToBytes());
+            Assert.Equal(
+                ErrorCodes.Crc,
+                TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
+            );
         }
     }
 }

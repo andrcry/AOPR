@@ -1,6 +1,6 @@
 namespace SimpleArchiver
 {
-    // Елемент блока за специфікацією: або літерал (один байт), або посилання "назад на Distance, взяти Length байтів"
+    // Елемент LZ77: або літерал (один байт), або посилання "назад на Distance, взяти Length байтів"
     public class Token
     {
         public bool IsMatch { get; set; } // true - посилання, false - літерал
