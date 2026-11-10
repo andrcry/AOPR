@@ -12,6 +12,7 @@ namespace SimpleArchiver
     // measure - таблиці для звіту по файлах
     // train - навчити класифікатор: папка train, папка valid, файл моделі
     // classify - визначити тип файлів: файл моделі, потім файли
+    // knapsack-table - таблиця рюкзака першого тому: опції --volume і --model, потім файли або папки
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується
     static class Program
@@ -41,6 +42,8 @@ namespace SimpleArchiver
                     Train(args);
                 else if (command == "classify" && args.Length >= 3)
                     Classify(args);
+                else if (command == "knapsack-table" && args.Length >= 2)
+                    KnapsackTable.Print(args, 1);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -90,6 +93,8 @@ namespace SimpleArchiver
             Console.WriteLine("measure файли");
             Console.WriteLine("train папка_train папка_valid файл_моделі");
             Console.WriteLine("classify файл_моделі файли");
+            Console.WriteLine("knapsack-table опції файли_або_папки");
+            Console.WriteLine("опції knapsack-table: --volume байти, --model файл");
             Console.WriteLine("check");
         }
 
