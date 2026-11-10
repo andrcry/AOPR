@@ -3,7 +3,7 @@ using System.Text;
 
 namespace SimpleArchiver
 {
-    // Створює архів: ріже файл на блоки, стискає їх LZ77 і Гаффманом,
+    // Створює архів: визначає тип файла, ріже файл на блоки, стискає їх LZ77 і Гаффманом,
     // розкладає по томах, шифрує AES і ставить пломбу HMAC
     public static class ArchiveWriter
     {
@@ -30,6 +30,10 @@ namespace SimpleArchiver
         {
             CheckFiles(files);
 
+            FileClassifier? classifier = null;
+            if (settings.ClassifierPath != null)
+                classifier = FileClassifier.Load(settings.ClassifierPath);
+
             var records = new List<FileRecord>();
             var blocks = new List<PreparedBlock>();
 
@@ -37,18 +41,25 @@ namespace SimpleArchiver
             {
                 byte[] data = files[fileNumber].Data;
 
-                // Запис таблиці файлів
+                // Тип файла визначає перцептрон
+                int fileType = classifier == null ? 0 : classifier.Classify(data);
+
+                // Вже стиснуті файли (JPEG, ZIP, MP3) немає сенсу стискати ще раз
+                bool compress = fileType != FileClassifier.AlreadyCompressed;
+
                 var record = new FileRecord();
                 record.Name = files[fileNumber].Name;
                 record.OriginalSize = data.Length;
                 record.Crc = Crc32.Compute(data);
-                record.Strategy = (int)settings.Parser;
+                record.FileType = fileType;
+                record.Strategy = compress ? (int)settings.Parser : 0;
                 records.Add(record);
 
                 // Розбиття на блоки: фіксоване або ДП
-                List<PreparedBlock> fileBlocks = settings.UseDpBlockSplit
-                    ? BlockSplitter.SplitDp(data, settings)
-                    : BlockSplitter.SplitFixed(data, settings, true);
+                List<PreparedBlock> fileBlocks =
+                    compress && settings.UseDpBlockSplit
+                        ? BlockSplitter.SplitDp(data, settings)
+                        : BlockSplitter.SplitFixed(data, settings, compress);
 
                 for (int b = 0; b < fileBlocks.Count; b++)
                 {
@@ -84,8 +95,7 @@ namespace SimpleArchiver
         public static PreparedBlock EncodeBlock(byte[] raw, Settings settings) =>
             EncodeBlock(raw, settings, true);
 
-        // Кодує один блок LZ77 і Гаффманом. Якщо стиснення заборонене або закодований блок
-        // не коротший за сирий, зберігає сирий (NO_COMPRESSION)
+        // Кодує один блок. Пробує всі дозволені варіанти і бере найкоротший
         public static PreparedBlock EncodeBlock(byte[] raw, Settings settings, bool compress)
         {
             var block = new PreparedBlock();
@@ -96,15 +106,42 @@ namespace SimpleArchiver
             if (!compress)
                 return block;
 
-            byte[] coded = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
+            // Варіант 1. LZ77 + Гаффман
+            byte[] best = BlockCoder.Encode(Lz77.Parse(raw, settings.Parser, settings.MaxChain));
 
-            if (coded.Length < raw.Length)
+            // Варіант 2. Прогноз байта: стискаємо залишки замість байтів
+            if (settings.UsePrediction)
             {
-                block.Data = coded;
+                best = Join(BytePredictor.NoPredictionHeader(), best);
+
+                BytePredictor predictor = BytePredictor.Train(raw, settings.HistoryLength);
+                byte[] residuals = predictor.MakeResiduals(raw);
+                byte[] withPrediction = Join(
+                    predictor.ToBytes(),
+                    BlockCoder.Encode(Lz77.Parse(residuals, settings.Parser, settings.MaxChain))
+                );
+
+                if (withPrediction.Length < best.Length)
+                    best = withPrediction;
+            }
+
+            // Варіант 3. Без стиснення, якщо інакше не коротше (NO_COMPRESSION)
+            if (best.Length < raw.Length)
+            {
+                block.Data = best;
                 block.Flags = 0;
             }
 
             return block;
+        }
+
+        // Склеює два масиви байтів в один
+        static byte[] Join(byte[] first, byte[] second)
+        {
+            var result = new byte[first.Length + second.Length];
+            Array.Copy(first, 0, result, 0, first.Length);
+            Array.Copy(second, 0, result, first.Length, second.Length);
+            return result;
         }
 
         // nonce = 8 байтів архіву + номер тому. Так nonce різний для кожного тому
@@ -119,21 +156,23 @@ namespace SimpleArchiver
             return nonce;
         }
 
-        // Перевіряє, що імена безпечні, не повторюються і не задовгі
+        // Перевіряє, що імена безпечні, не повторюються і не задовгі.
+        // Повтор шукаємо без урахування регістру: у Windows A.txt і a.txt - той самий файл,
+        // тому такий архів там не розпакувався б повністю
         static void CheckFiles(List<ArchiveFile> files)
         {
-            var names = new List<string>();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (ArchiveFile file in files)
             {
                 if (!SafeNames.IsSafe(file.Name))
                     throw new ArgumentException($"недопустиме ім'я файла: {file.Name}");
-                if (names.Contains(file.Name))
-                    throw new ArgumentException($"два файли з однаковим ім'ям: {file.Name}");
                 if (Encoding.UTF8.GetByteCount(file.Name) > 65535)
                     throw new ArgumentException("ім'я файла задовге");
-
-                names.Add(file.Name);
+                if (!names.Add(file.Name))
+                    throw new ArgumentException(
+                        $"два файли з однаковим ім'ям (без урахування регістру): {file.Name}"
+                    );
             }
         }
     }

@@ -28,15 +28,20 @@ namespace SimpleArchiver
                 WriteBit((value >> i) & 1);
         }
 
-        // Повертає всі байти. Неповний останній байт доповнюється нулями справа
+        // Повертає всі байти. Неповний останній байт доповнюється нулями справа.
+        // Сам записувач не змінюється: після виклику можна писати далі
         public byte[] ToArray()
         {
-            var result = new List<byte>(bytes);
+            int extra = bitsInCurrent > 0 ? 1 : 0; // чи є неповний байт
 
-            if (bitsInCurrent > 0)
-                result.Add((byte)(current << (8 - bitsInCurrent)));
+            // Масив одразу потрібного розміру і одне копіювання
+            var result = new byte[bytes.Count + extra];
+            bytes.CopyTo(result);
 
-            return result.ToArray();
+            if (extra == 1)
+                result[^1] = (byte)(current << (8 - bitsInCurrent));
+
+            return result;
         }
     }
 }

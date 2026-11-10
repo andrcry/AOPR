@@ -83,7 +83,7 @@ namespace SimpleArchiver
                             $"блок {block.BlockNumber} файла {name} повторюється"
                         );
 
-                    assembly.Blocks[block.BlockNumber] = DecodeBlock(block);
+                    assembly.Blocks[block.BlockNumber] = DecodeBlock(block, payload.UsesPrediction);
                 }
             }
 
@@ -94,13 +94,20 @@ namespace SimpleArchiver
             return result;
         }
 
-        // Розкодовує один блок: сирий блок повертає як є, стиснутий розкодовує Гаффманом
-        static byte[] DecodeBlock(BlockRecord block)
+        // Розкодовує один блок. З прапорцем PREDICTION стиснутий блок починається із заголовка прогнозу
+        static byte[] DecodeBlock(BlockRecord block, bool prediction)
         {
             if (block.IsNotCompressed)
                 return block.Data;
 
-            return BlockCoder.Decode(block.Data, block.RawLength);
+            if (!prediction)
+                return BlockCoder.Decode(block.Data, block.RawLength);
+
+            var reader = new ByteReader(block.Data, ErrorCodes.Code);
+            BytePredictor? predictor = BytePredictor.Read(reader);
+            byte[] decoded = BlockCoder.Decode(reader.ReadBytes(reader.Remaining), block.RawLength);
+
+            return predictor == null ? decoded : predictor.Restore(decoded);
         }
 
         // Перевіряє, що томів рівно volume_count, без повторів і з правильними номерами

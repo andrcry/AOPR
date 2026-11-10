@@ -44,20 +44,22 @@ namespace SimpleArchiver
             }
         }
 
-        // Повертає всі корисні збіги для pos (множина M_i для ДП-розбору).
-        // Ланцюжок іде від ближчих позицій до дальших, тому кожен наступний збіг довший
-        // за попередній, але й відстань у нього більша.
-        // Викликати з позиціями, які не зменшуються
-        public List<(int Length, int Distance)> FindAll(int pos)
+        // Спільний цикл пошуку для FindAll і FindLongest, щоб логіка була в одному місці
+        // і обидва методи гарантовано давали узгоджені результати.
+        // Повертає найдовший збіг (Length = 0, якщо збігу немає).
+        // Якщо found не null, туди додається кожен збіг, довший за попередній.
+        // Ланцюжок іде від ближчих позицій до дальших, тому серед однаково довгих
+        // збігів перемагає найближчий (умова length > bestLength, а не >=)
+        (int Length, int Distance) Search(int pos, List<(int Length, int Distance)>? found)
         {
             AddPositionsBefore(pos);
-            var found = new List<(int Length, int Distance)>();
 
             if (pos + Lz77.MinMatch > data.Length)
-                return found;
+                return (0, 0);
 
             int maxLength = Math.Min(Lz77.MaxMatch, data.Length - pos);
             int bestLength = Lz77.MinMatch - 1;
+            int bestDistance = 0;
             int candidate = head[Hash(pos)];
             int checkedCount = 0;
 
@@ -74,7 +76,8 @@ namespace SimpleArchiver
                 if (length > bestLength)
                 {
                     bestLength = length;
-                    found.Add((length, distance));
+                    bestDistance = distance;
+                    found?.Add((length, distance));
                     if (length == maxLength)
                         break;
                 }
@@ -83,18 +86,26 @@ namespace SimpleArchiver
                 checkedCount++;
             }
 
+            if (bestDistance == 0)
+                return (0, 0); // жодного збігу довжиною хоча б MinMatch
+
+            return (bestLength, bestDistance);
+        }
+
+        // Повертає всі корисні збіги для pos (множина M_i для ДП-розбору).
+        // Ланцюжок іде від ближчих позицій до дальших, тому кожен наступний збіг довший
+        // за попередній, але й відстань у нього більша.
+        // Викликати з позиціями, які не зменшуються
+        public List<(int Length, int Distance)> FindAll(int pos)
+        {
+            var found = new List<(int Length, int Distance)>();
+            Search(pos, found);
             return found;
         }
 
-        // Повертає найдовший збіг для pos. Length = 0, якщо збігу немає
-        public (int Length, int Distance) FindLongest(int pos)
-        {
-            List<(int Length, int Distance)> found = FindAll(pos);
-
-            if (found.Count == 0)
-                return (0, 0);
-
-            return found[found.Count - 1];
-        }
+        // Повертає найдовший збіг для pos. Length = 0, якщо збігу немає.
+        // Не створює списку: жодних виділень пам'яті на кожну позицію.
+        // Викликати з позиціями, які не зменшуються
+        public (int Length, int Distance) FindLongest(int pos) => Search(pos, null);
     }
 }

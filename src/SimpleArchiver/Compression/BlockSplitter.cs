@@ -6,6 +6,9 @@ namespace SimpleArchiver
         // Звичайне розбиття: блоки по BlockSize байтів
         public static List<PreparedBlock> SplitFixed(byte[] data, Settings settings, bool compress)
         {
+            if (settings.BlockSize <= 0)
+                throw new ArgumentException("BlockSize повинен бути додатним");
+
             var blocks = new List<PreparedBlock>();
 
             for (int offset = 0; offset < data.Length; offset += settings.BlockSize)
@@ -28,9 +31,12 @@ namespace SimpleArchiver
         // Блок не довший за BlockSize, тому i беремо лише з останніх BlockSize / SplitUnit шматків
         public static List<PreparedBlock> SplitDp(byte[] data, Settings settings)
         {
+            // BlockSize = 0 (або від'ємний) теж ділиться на unit без остачі, але тоді maxSpan = 0,
+            // жоден стан ДП не досяжний, а зворотний хід склеїв би весь файл в один блок понад ліміт.
+            // Якщо BlockSize > 0 і ділиться на unit, то unit <= BlockSize виконується саме собою
             int unit = settings.SplitUnit;
-            if (unit <= 0 || settings.BlockSize % unit != 0)
-                throw new ArgumentException("BlockSize повинен ділитися на SplitUnit без остачі");
+            if (unit <= 0 || settings.BlockSize <= 0 || settings.BlockSize % unit != 0)
+                throw new ArgumentException("BlockSize повинен бути додатним кратним SplitUnit");
 
             int pieces = (data.Length + unit - 1) / unit;
             int maxSpan = settings.BlockSize / unit;
