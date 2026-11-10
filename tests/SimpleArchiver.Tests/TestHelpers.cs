@@ -5,6 +5,8 @@ namespace SimpleArchiver.Tests
     // Допоміжні методи для тестів
     public static class TestHelpers
     {
+        public const string Password = "algo2026"; // пароль для тестів
+
         // Файл з контрольного прикладу: 40 повторів "hello world " = 480 байтів
         public static byte[] Hello480()
         {
@@ -13,6 +15,14 @@ namespace SimpleArchiver.Tests
                 text += "hello world ";
 
             return Encoding.ASCII.GetBytes(text);
+        }
+
+        // Випадкові байти з фіксованим seed, щоб тест завжди був однаковий
+        public static byte[] RandomBytes(int count, int seed)
+        {
+            var data = new byte[count];
+            new Random(seed).NextBytes(data);
+            return data;
         }
     }
 }
