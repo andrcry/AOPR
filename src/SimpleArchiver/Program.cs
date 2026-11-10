@@ -13,6 +13,7 @@ namespace SimpleArchiver
     // train - навчити класифікатор: папка train, папка valid, файл моделі
     // classify - визначити тип файлів: файл моделі, потім файли
     // knapsack-table - таблиця рюкзака першого тому: опції --volume і --model, потім файли або папки
+    // entropy-table - таблиця ентропії залишків прогнозу: файли або папки, кожна папка - одна група
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується
     static class Program
@@ -44,6 +45,8 @@ namespace SimpleArchiver
                     Classify(args);
                 else if (command == "knapsack-table" && args.Length >= 2)
                     KnapsackTable.Print(args, 1);
+                else if (command == "entropy-table" && args.Length >= 2)
+                    EntropyTable.Print(args, 1);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -95,6 +98,7 @@ namespace SimpleArchiver
             Console.WriteLine("classify файл_моделі файли");
             Console.WriteLine("knapsack-table опції файли_або_папки");
             Console.WriteLine("опції knapsack-table: --volume байти, --model файл");
+            Console.WriteLine("entropy-table файли_або_папки");
             Console.WriteLine("check");
         }
 
