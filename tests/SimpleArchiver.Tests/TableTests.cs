@@ -14,6 +14,15 @@ namespace SimpleArchiver.Tests
             return folder;
         }
 
+        // Плавні дані, як рядок растру: сусідні байти майже однакові
+        static byte[] SmoothData(int count)
+        {
+            var data = new byte[count];
+            for (int i = 0; i < count; i++)
+                data[i] = (byte)(128 + 100 * Math.Sin(i / 40.0) + 20 * Math.Sin(i / 7.0));
+            return data;
+        }
+
         // Повертає значення з рядка таблиці виду "назва<табуляція>значення"
         static string ValueOf(List<string> lines, string name)
         {
@@ -78,6 +87,42 @@ namespace SimpleArchiver.Tests
             finally
             {
                 Directory.Delete(folder, true);
+            }
+        }
+
+        // Для плавних даних прогноз знижує ентропію, для шуму ні
+        [Fact]
+        public void EntropyTableSmoothHelpedNoiseNot()
+        {
+            string root = MakeTempFolder();
+            try
+            {
+                string smooth = Path.Combine(root, "smooth");
+                string noise = Path.Combine(root, "noise");
+                Directory.CreateDirectory(smooth);
+                Directory.CreateDirectory(noise);
+                File.WriteAllBytes(Path.Combine(smooth, "row.bmp"), SmoothData(60000));
+                File.WriteAllBytes(
+                    Path.Combine(noise, "photo.jpg"),
+                    TestHelpers.RandomBytes(60000, 4)
+                );
+
+                List<string> lines = EntropyTable.Build(
+                    new string[] { "entropy-table", smooth, noise },
+                    1
+                );
+
+                string[] smoothRow = lines[2].Split('\t');
+                string[] noiseRow = lines[3].Split('\t');
+
+                Assert.Equal("smooth", smoothRow[0]);
+                Assert.Equal("так", smoothRow[5]);
+                Assert.Equal("noise", noiseRow[0]);
+                Assert.Equal("ні", noiseRow[5]);
+            }
+            finally
+            {
+                Directory.Delete(root, true);
             }
         }
     }
