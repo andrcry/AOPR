@@ -119,11 +119,25 @@ namespace SimpleArchiver
                     "після бітового потоку є зайві байти"
                 );
 
+            // raw_len прийшов з архіву, тому перед виділенням пам'яті перевіряємо, що він можливий.
+            // Кожен елемент займає хоча б 1 біт і дає не більше MaxMatch байтів, тому з потоку
+            // довжиною stream_len байтів не може вийти більше ніж min(token_count, stream_len * 8) * MaxMatch.
+            // Без цієї перевірки архів на кілька байтів міг би змусити виділити ~2 ГБ
+            long maxTokens = Math.Min(tokenCount, (long)streamLength * 8);
+            if (rawLength < 0 || rawLength > maxTokens * Lz77.MaxMatch)
+                throw new ArchiveException(
+                    ErrorCodes.Payload,
+                    "raw_len більший, ніж можуть дати елементи блока"
+                );
+
             var bits = new BitReader(reader.ReadBytes(streamLength));
             var literalDecoder = new HuffmanDecoder(literalLengths);
             var lengthDecoder = new HuffmanDecoder(lengthLengths);
             var distanceDecoder = new HuffmanDecoder(distanceLengths);
-            var output = new List<byte>();
+
+            // Розмір результату відомий наперед: один масив, жодних розширень і фінального копіювання
+            var output = new byte[rawLength];
+            int written = 0; // скільки байтів уже розкодовано
 
             for (uint i = 0; i < tokenCount; i++)
             {
@@ -131,10 +145,10 @@ namespace SimpleArchiver
 
                 if (symbol < MatchMarker)
                 {
-                    if (output.Count >= rawLength)
+                    if (written >= rawLength)
                         throw new ArchiveException(ErrorCodes.Payload, "даних більше, ніж raw_len");
 
-                    output.Add((byte)symbol);
+                    output[written++] = (byte)symbol;
                     continue;
                 }
 
@@ -143,29 +157,30 @@ namespace SimpleArchiver
                 int distance =
                     code <= 1 ? code + 1 : ((1 << (code - 1)) | bits.ReadBits(code - 1)) + 1;
 
-                if (distance > output.Count)
+                if (distance > written)
                     throw new ArchiveException(
                         ErrorCodes.Code,
                         "посилання вказує за початок даних"
                     );
-                if (output.Count + length > rawLength)
+                if (written + length > rawLength)
                     throw new ArchiveException(ErrorCodes.Payload, "даних більше, ніж raw_len");
 
                 // Копіюємо по одному байту, тому збіг може накладатися сам на себе
-                int start = output.Count - distance;
+                // (наприклад, відстань 1 і довжина 10 дають 10 однакових байтів)
+                int start = written - distance;
                 for (int k = 0; k < length; k++)
-                    output.Add(output[start + k]);
+                    output[written++] = output[start + k];
             }
 
             bits.CheckEndIsClean();
 
-            if (output.Count != rawLength)
+            if (written != rawLength)
                 throw new ArchiveException(
                     ErrorCodes.Payload,
                     "розмір розкодованого блока не дорівнює raw_len"
                 );
 
-            return output.ToArray();
+            return output; // масив уже рівно потрібного розміру, ToArray не потрібен
         }
     }
 }
