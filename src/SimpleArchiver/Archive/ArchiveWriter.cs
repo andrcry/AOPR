@@ -47,6 +47,15 @@ namespace SimpleArchiver
                 // Вже стиснуті файли (JPEG, ZIP, MP3) немає сенсу стискати ще раз
                 bool compress = fileType != FileClassifier.AlreadyCompressed;
 
+                // Крок 2. Параметри стиснення за типом файла, якщо їх увімкнено
+                Settings fileSettings = settings;
+                if (classifier != null && settings.UseTypeStrategy)
+                {
+                    TypeStrategy strategy = settings.TypeStrategies[fileType];
+                    fileSettings = strategy.ApplyTo(settings);
+                    compress = strategy.Compress;
+                }
+
                 var record = new FileRecord();
                 record.Name = files[fileNumber].Name;
                 record.OriginalSize = data.Length;
@@ -167,6 +176,8 @@ namespace SimpleArchiver
             {
                 if (!SafeNames.IsSafe(file.Name))
                     throw new ArgumentException($"недопустиме ім'я файла: {file.Name}");
+                if (names.Contains(file.Name))
+                    throw new ArgumentException($"два файли з однаковим ім'ям: {file.Name}");
                 if (Encoding.UTF8.GetByteCount(file.Name) > 65535)
                     throw new ArgumentException("ім'я файла задовге");
                 if (!names.Add(file.Name))

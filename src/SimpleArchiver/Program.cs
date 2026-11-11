@@ -8,10 +8,11 @@ namespace SimpleArchiver
     //   опція --split dp - ДП-розбиття на блоки
     //   опція --predict - прогноз наступного байта
     //   опція --model файл - класифікатор типу файла
+    //   опція --strategy - параметри стиснення за типом файла (разом з --model)
     // unpack - розпакувати: папка, потім томи
     // measure - таблиці для звіту по файлах
     // train - навчити класифікатор: папка train, папка valid, файл моделі
-    // classify - визначити тип файлів: файл моделі, потім файли
+    // classify - визначити тип файлів і параметри стиснення для них: файл моделі, потім файли
     // knapsack-table - таблиця рюкзака першого тому: опції --volume і --model, потім файли або папки
     // entropy-table - таблиця ентропії залишків прогнозу: файли або папки, кожна папка - одна група
     // check - контрольні точки всіх алгоритмів
@@ -90,7 +91,7 @@ namespace SimpleArchiver
             Console.WriteLine("Використання:");
             Console.WriteLine("pack опції архів.arc файли");
             Console.WriteLine(
-                "опції pack: --parser greedy, --parser lazy, --parser dp, --split dp, --predict, --model файл"
+                "опції pack: --parser greedy, --parser lazy, --parser dp, --split dp, --predict, --model файл, --strategy"
             );
             Console.WriteLine("unpack папка томи");
             Console.WriteLine("measure файли");
@@ -119,7 +120,7 @@ namespace SimpleArchiver
             var settings = new Settings();
             int index = 1;
 
-            // Опції на початку: --parser, --split, --predict, --model
+            // Опції на початку: --parser, --split, --predict, --model, --strategy
             while (index < args.Length && args[index].StartsWith("--"))
             {
                 string option = args[index];
@@ -127,6 +128,13 @@ namespace SimpleArchiver
                 if (option == "--predict")
                 {
                     settings.UsePrediction = true;
+                    index++;
+                    continue;
+                }
+
+                if (option == "--strategy")
+                {
+                    settings.UseTypeStrategy = true;
                     index++;
                     continue;
                 }
@@ -153,6 +161,9 @@ namespace SimpleArchiver
 
             if (args.Length - index < 2)
                 throw new ArgumentException("потрібні ім'я архіву і хоча б один файл");
+
+            if (settings.UseTypeStrategy && settings.ClassifierPath == null)
+                throw new ArgumentException("опція --strategy працює лише разом з --model");
 
             string archivePath = args[index];
             var files = new List<ArchiveFile>();
@@ -219,10 +230,11 @@ namespace SimpleArchiver
             Console.WriteLine($"Ваги збережено у {args[3]}");
         }
 
-        // Показує тип, який перцептрон визначив для кожного файла
+        // Показує тип, який перцептрон визначив для кожного файла, і параметри стиснення для цього типу
         static void Classify(string[] args)
         {
             FileClassifier classifier = FileClassifier.Load(args[1]);
+            TypeStrategy[] strategies = new Settings().TypeStrategies;
 
             for (int i = 2; i < args.Length; i++)
             {

@@ -16,11 +16,19 @@ namespace SimpleArchiver
         public string? ClassifierPath { get; set; } // файл з вагами перцептрона, null - не класифікувати
         public bool UsePrediction { get; set; } = false; // прогноз наступного байта (командне розширення)
         public int HistoryLength { get; set; } = 4; // скільки попередніх байтів бачить прогноз
+        public bool UseTypeStrategy { get; set; } = false; // true - параметри стиснення за типом файла (потрібен класифікатор)
+        public TypeStrategy[] TypeStrategies { get; set; } = TypeStrategy.Defaults(); // параметри стиснення для типів 0-6
 
         // Томи
         public int MaxVolumeBytes { get; set; } = 1048576; // max_volume_bytes
         public bool UseDpKnapsack { get; set; } = true; // true - рюкзак ДП, false - жадібний
         public int[] TypePriorities { get; set; } = { 1, 1, 1, 1, 1, 1, 1 }; // пріоритети_типів 0-6
+
+        // Повертає копію налаштувань, щоб змінити її для одного файла, не чіпаючи загальні
+        public Settings Copy()
+        {
+            return (Settings)MemberwiseClone();
+        }
 
         // Повертає цінність блока за типом файла. Не менше 1
         public int GetPriority(int fileType)
