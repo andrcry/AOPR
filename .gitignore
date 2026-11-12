@@ -5,3 +5,4 @@ TestResults/
 .vscode/
 *.arc
 !data/reference/*.arc
+!data/
