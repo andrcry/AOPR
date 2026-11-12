@@ -1,6 +1,8 @@
+using System.Numerics;
+
 namespace SimpleArchiver.Tests
 {
-    // Захист: вирівнювання розміру тому, аналіз витоку метаданих
+    // Захист: вирівнювання розміру тому, аналіз витоку метаданих, Діффі - Геллман
     public class SecurityTests
     {
         // Довжина навантаження тому: розмір тому мінус заголовок 41 байт і пломба 32 байти
@@ -16,6 +18,42 @@ namespace SimpleArchiver.Tests
             );
             Directory.CreateDirectory(folder);
             return folder;
+        }
+
+        // Перевірка Міллера - Рабіна: чи схоже число на просте
+        static bool IsProbablePrime(BigInteger n)
+        {
+            BigInteger d = n - 1;
+            int r = 0;
+            while (d % 2 == 0)
+            {
+                d /= 2;
+                r++;
+            }
+
+            int[] bases = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29 };
+            foreach (int a in bases)
+            {
+                BigInteger x = BigInteger.ModPow(a, d, n);
+                if (x == 1 || x == n - 1)
+                    continue;
+
+                bool composite = true;
+                for (int i = 0; i < r - 1; i++)
+                {
+                    x = BigInteger.ModPow(x, 2, n);
+                    if (x == n - 1)
+                    {
+                        composite = false;
+                        break;
+                    }
+                }
+
+                if (composite)
+                    return false;
+            }
+
+            return true;
         }
 
         // Вирівнювання до 4096 байтів: навантаження кратне 4096, файли відновлюються
@@ -135,6 +173,88 @@ namespace SimpleArchiver.Tests
             finally
             {
                 Directory.Delete(folder, true);
+            }
+        }
+
+        // Модуль Діффі - Геллмана - просте число на 2048 бітів, і (p - 1) / 2 теж просте
+        [Fact]
+        public void DhPrimeIs2048BitSafePrime()
+        {
+            BigInteger p = DiffieHellman.prime;
+
+            Assert.Equal(2048, (int)p.GetBitLength());
+            Assert.True(IsProbablePrime(p));
+            Assert.True(IsProbablePrime((p - 1) / 2));
+        }
+
+        // Кейс D1 номер 20: спільний ключ однаковий на обох сторонах
+        [Fact]
+        public void DhSharedSecretIsSameOnBothSides()
+        {
+            BigInteger alicePrivate = DiffieHellman.GeneratePrivateKey();
+            BigInteger bobPrivate = DiffieHellman.GeneratePrivateKey();
+            BigInteger alicePublic = DiffieHellman.PublicKey(alicePrivate);
+            BigInteger bobPublic = DiffieHellman.PublicKey(bobPrivate);
+
+            Assert.Equal(
+                DiffieHellman.SharedSecret(alicePrivate, bobPublic),
+                DiffieHellman.SharedSecret(bobPrivate, alicePublic)
+            );
+            Assert.Equal(
+                DiffieHellman.SharedPassword(alicePrivate, bobPublic),
+                DiffieHellman.SharedPassword(bobPrivate, alicePublic)
+            );
+            Assert.Equal(64, DiffieHellman.SharedPassword(alicePrivate, bobPublic).Length);
+        }
+
+        // Небезпечні відкриті ключі 0, 1 і p - 1 відхиляються
+        [Fact]
+        public void DhRejectsBadPublicKeys()
+        {
+            BigInteger privateKey = DiffieHellman.GeneratePrivateKey();
+            BigInteger[] badKeys = { 0, 1, DiffieHellman.prime - 1, DiffieHellman.prime };
+
+            foreach (BigInteger key in badKeys)
+            {
+                bool rejected = false;
+                try
+                {
+                    DiffieHellman.SharedSecret(privateKey, key);
+                }
+                catch (ArgumentException)
+                {
+                    rejected = true;
+                }
+                Assert.True(rejected);
+            }
+        }
+
+        // Ключ записується у файл і читається назад без змін, пошкоджений файл дає зрозумілу помилку
+        [Fact]
+        public void DhKeySavesAndLoads()
+        {
+            string path = Path.GetTempFileName();
+            try
+            {
+                BigInteger key = DiffieHellman.GeneratePrivateKey();
+                DiffieHellman.SaveKey(path, key);
+                Assert.Equal(key, DiffieHellman.LoadKey(path));
+
+                File.WriteAllText(path, "не ключ");
+                bool rejected = false;
+                try
+                {
+                    DiffieHellman.LoadKey(path);
+                }
+                catch (ArgumentException)
+                {
+                    rejected = true;
+                }
+                Assert.True(rejected);
+            }
+            finally
+            {
+                File.Delete(path);
             }
         }
     }
