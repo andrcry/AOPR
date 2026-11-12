@@ -17,6 +17,7 @@ namespace SimpleArchiver
     // classify - визначити тип файлів і параметри стиснення для них: файл моделі, потім файли
     // knapsack-table - таблиця рюкзака першого тому: опції --volume і --model, потім файли або папки
     // entropy-table - таблиця ентропії залишків прогнозу: файли або папки, кожна папка - одна група
+    // leak-table - таблиця витоку метаданих: опція --pad байти, потім файли або папки
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується
     static class Program
@@ -50,6 +51,8 @@ namespace SimpleArchiver
                     KnapsackTable.Print(args, 1);
                 else if (command == "entropy-table" && args.Length >= 2)
                     EntropyTable.Print(args, 1);
+                else if (command == "leak-table" && args.Length >= 2)
+                    LeakTable.Print(args, 1);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -103,6 +106,8 @@ namespace SimpleArchiver
             Console.WriteLine("knapsack-table опції файли_або_папки");
             Console.WriteLine("опції knapsack-table: --volume байти, --model файл");
             Console.WriteLine("entropy-table файли_або_папки");
+            Console.WriteLine("leak-table опції файли_або_папки");
+            Console.WriteLine("опції leak-table: --pad байти");
             Console.WriteLine("check");
         }
 

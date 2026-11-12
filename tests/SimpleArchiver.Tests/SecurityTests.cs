@@ -1,11 +1,22 @@
 namespace SimpleArchiver.Tests
 {
-    // Захист: вирівнювання розміру тому
+    // Захист: вирівнювання розміру тому, аналіз витоку метаданих
     public class SecurityTests
     {
         // Довжина навантаження тому: розмір тому мінус заголовок 41 байт і пломба 32 байти
         static int PayloadLength(byte[] volume) =>
             volume.Length - VolumeHeader.Size - VolumeHeader.MacSize;
+
+        // Створює порожню тимчасову папку для тесту
+        static string MakeTempFolder()
+        {
+            string folder = Path.Combine(
+                Path.GetTempPath(),
+                "sarc-test-" + Guid.NewGuid().ToString("N")
+            );
+            Directory.CreateDirectory(folder);
+            return folder;
+        }
 
         // Вирівнювання до 4096 байтів: навантаження кратне 4096, файли відновлюються
         [Fact]
@@ -83,6 +94,48 @@ namespace SimpleArchiver.Tests
                 ErrorCodes.Payload,
                 TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
             );
+        }
+
+        // Без вирівнювання кожен файл впізнається за розміром, з вирівнюванням розміри однакові
+        [Fact]
+        public void LeakTablePaddingHidesSizes()
+        {
+            string folder = MakeTempFolder();
+            try
+            {
+                File.WriteAllBytes(
+                    Path.Combine(folder, "a.bin"),
+                    TestHelpers.RandomBytes(1000, 73)
+                );
+                File.WriteAllBytes(
+                    Path.Combine(folder, "b.bin"),
+                    TestHelpers.RandomBytes(1500, 74)
+                );
+                File.WriteAllBytes(
+                    Path.Combine(folder, "c.bin"),
+                    TestHelpers.RandomBytes(2000, 75)
+                );
+
+                List<string> lines = LeakTable.Build(
+                    new string[] { "leak-table", "--pad", "4096", folder },
+                    1
+                );
+
+                // Рядки порівняння: спосіб, різних розмірів, впізнаних файлів, витік бітів, додано байтів, відсотків
+                string[] plain = lines[lines.Count - 3].Split('\t');
+                string[] byUnit = lines[lines.Count - 2].Split('\t');
+
+                Assert.Equal("3", plain[1]);
+                Assert.Equal("3", plain[2]);
+                Assert.Equal("0", plain[4]);
+                Assert.Equal("1", byUnit[1]);
+                Assert.Equal("0", byUnit[2]);
+                Assert.True(long.Parse(byUnit[4]) > 0);
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
         }
     }
 }
