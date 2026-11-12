@@ -56,7 +56,7 @@ namespace SimpleArchiver
 
             // Крок 1. Пояснення і параметри команди
             File.WriteAllText(Path.Combine(folder, "README_DEMO.md"), DemoReadme(seed));
-            File.WriteAllText(Path.Combine(folder, "team_config.json"), TeamConfig());
+            File.WriteAllText(Path.Combine(folder, "team_config.json"), MakeTeamConfig(seed));
 
             // Крок 2. Корпус: по папці на кожну групу, файли по 20-80 КБ
             for (int group = 0; group < DemoFiles.groupNames.Length; group++)
@@ -232,25 +232,26 @@ namespace SimpleArchiver
                 volumeNames.Add(volumeName);
             }
 
-            // Крок 2. Опис архіву
+            // Крок 2. Опис архіву в тому самому вигляді, що й у викладача: томи, пароль і вміст
             var json = new StringBuilder();
             json.Append("{\n");
-            json.Append($"  \"description\": \"{description}\",\n");
-            json.Append($"  \"password\": \"{Password}\",\n");
-            json.Append("  \"volumes\": [");
-            for (int i = 0; i < volumeNames.Count; i++)
-                json.Append((i > 0 ? ", " : "") + $"\"{volumeNames[i]}\"");
+            json.Append($"  \"опис\": \"{description}\",\n");
+            json.Append($"  \"томів\": {volumes.Count},\n");
+            json.Append("  \"розміри_томів\": [");
+            for (int i = 0; i < volumes.Count; i++)
+                json.Append((i > 0 ? ", " : "") + volumes[i].Length);
             json.Append("],\n");
-            json.Append("  \"files\": [\n");
+            json.Append($"  \"пароль\": \"{Password}\",\n");
+            json.Append("  \"вміст\": {\n");
             for (int i = 0; i < files.Count; i++)
             {
                 string crc = Crc32.Compute(files[i].Data).ToString("X8");
                 json.Append(
-                    $"    {{\"name\": \"{files[i].Name}\", \"size\": {files[i].Data.Length}, \"crc32\": \"{crc}\"}}"
+                    $"    \"{files[i].Name}\": {{\"розмір\": {files[i].Data.Length}, \"crc32\": \"{crc}\"}}"
                 );
                 json.Append(i < files.Count - 1 ? ",\n" : "\n");
             }
-            json.Append("  ]\n}\n");
+            json.Append("  }\n}\n");
 
             File.WriteAllText(Path.Combine(folder, name + ".json"), json.ToString());
         }
@@ -306,14 +307,35 @@ namespace SimpleArchiver
             // Очікувані коди відмови
             var json = new StringBuilder();
             json.Append("{\n");
-            json.Append($"  \"bad_01_tampered_byte.arc\": \"{ErrorCodes.Hmac}\",\n");
-            json.Append($"  \"bad_02_tampered_tag.arc\": \"{ErrorCodes.Hmac}\",\n");
-            json.Append($"  \"bad_03_truncated.arc\": \"{ErrorCodes.Length}\",\n");
-            json.Append($"  \"bad_04_bad_magic.arc\": \"{ErrorCodes.Magic}\",\n");
-            json.Append($"  \"bad_05_reserved.arc\": \"{ErrorCodes.Payload}\",\n");
-            json.Append($"  \"bad_06_bad_crc.arc\": \"{ErrorCodes.Crc}\"\n");
+            json.Append(
+                Failure("bad_01_tampered_byte.arc", ErrorCodes.Hmac, "Змінено байт шифротексту.")
+                    + ",\n"
+            );
+            json.Append(
+                Failure("bad_02_tampered_tag.arc", ErrorCodes.Hmac, "Змінено тег HMAC.") + ",\n"
+            );
+            json.Append(
+                Failure("bad_03_truncated.arc", ErrorCodes.Length, "Архів обрізано.") + ",\n"
+            );
+            json.Append(
+                Failure("bad_04_bad_magic.arc", ErrorCodes.Magic, "Зіпсовано magic.") + ",\n"
+            );
+            json.Append(
+                Failure("bad_05_reserved.arc", ErrorCodes.Payload, "reserved = 1 замість 0.")
+                    + ",\n"
+            );
+            json.Append(
+                Failure("bad_06_bad_crc.arc", ErrorCodes.Crc, "Зіпсовано CRC32 першого файла.")
+                    + "\n"
+            );
             json.Append("}\n");
             File.WriteAllText(Path.Combine(folder, "expected_failures.json"), json.ToString());
+        }
+
+        // Один рядок expected_failures.json у вигляді, як у викладача
+        static string Failure(string file, string code, string description)
+        {
+            return $"  \"{file}\": {{\"очікуваний_код\": \"{code}\", \"опис\": \"{description}\"}}";
         }
 
         // Шифрує і пломбує одне навантаження як архів з одного тому
@@ -324,27 +346,50 @@ namespace SimpleArchiver
             return Volume.Seal(0, 1, salt, nonce, payload, Keys.Derive(Password, salt));
         }
 
-        // Параметри команди. Значення, яких ще немає від викладача, позначені як демо
-        static string TeamConfig()
+        // Параметри команди в тому самому вигляді, що й team_config.json від викладача.
+        // Значення беремо з TeamConfig за замовчуванням, тобто такі самі, як у команди T01
+        static string MakeTeamConfig(int seed)
         {
-            var settings = new Settings();
+            var config = new TeamConfig();
             var json = new StringBuilder();
             json.Append("{\n");
+            json.Append("  \"команда\": \"DEMO\",\n");
+            json.Append($"  \"seed\": {seed},\n");
+            json.Append($"  \"пароль_сеансу\": \"{Password}\",\n");
             json.Append(
-                "  \"примітка\": \"демо-значення, замінити на team_config.json від викладача\",\n"
+                $"  \"метрика_Q\": {{\"alpha\": {Number(config.Alpha)}, \"beta\": {Number(config.Beta)}, \"t_ref_секунд\": {Number(config.TRef)}}},\n"
             );
-            json.Append("  \"alpha\": 1.0,\n");
-            json.Append("  \"beta\": 0.0,\n");
-            json.Append("  \"t_ref\": 1.0,\n");
-            json.Append($"  \"max_volume_bytes\": {settings.MaxVolumeBytes},\n");
-            json.Append($"  \"block_size\": {settings.BlockSize},\n");
-            json.Append("  \"пріоритети_типів\": [1, 1, 1, 1, 1, 1, 1],\n");
-            json.Append("  \"фіксовані_вартості_ДП\": {\"літерал\": 9, \"посилання\": 17},\n");
-            json.Append("  \"F1_min\": 0.8,\n");
-            json.Append("  \"протокол_навчання\": {\"ініціалізацій\": 3}\n");
+            json.Append(
+                $"  \"пакування\": {{\"max_volume_bytes\": {config.MaxVolumeBytes}, \"block_size\": {config.BlockSize}}},\n"
+            );
+
+            json.Append("  \"пріоритети_типів\": {");
+            for (int type = 0; type < FileClassifier.ClassCount; type++)
+                json.Append(
+                    (type > 0 ? ", " : "")
+                        + $"\"{FileClassifier.classNames[type]}\": {config.TypePriorities[type]}"
+                );
+            json.Append("},\n");
+
+            json.Append(
+                $"  \"фіксовані_вартості_ДП\": {{\"літерал_біт\": {config.LiteralBits}, \"посилання_база_біт\": {config.ReferenceBits}}},\n"
+            );
+            json.Append(
+                $"  \"класифікатор\": {{\"F1_min\": {Number(config.F1Min)}, \"базова_лінія_мажоритарний_клас\": {Number(config.BaselineMajority)}, "
+            );
+            json.Append(
+                $"\"базова_лінія_випадковий_вибір\": {Number(config.BaselineRandom)}, \"протокол_навчання\": {{\"ініціалізацій\": {config.Initializations}}}}},\n"
+            );
+            json.Append(
+                $"  \"довідково\": {{\"сирий_розмір\": {config.CorpusBytes}, \"розмір_архіву_опорного_пакувальника\": {config.ReferenceArchiveBytes}}}\n"
+            );
             json.Append("}\n");
             return json.ToString();
         }
+
+        // Дробове число для JSON: завжди з крапкою, а не з комою, незалежно від мови системи
+        static string Number(double value) =>
+            value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         // Пояснення в папці демо-даних
         static string DemoReadme(int seed)

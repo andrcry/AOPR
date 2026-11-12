@@ -141,6 +141,83 @@ namespace SimpleArchiver.Tests
             }
         }
 
+        // Усі 6 еталонних архівів викладача розпаковуються і збігаються з описом,
+        // а всі 6 зіпсованих відхиляються саме з тими кодами, що в expected_failures.json
+        [Fact]
+        public void TeacherReferencesPass()
+        {
+            ReferenceCheck.Build(
+                Path.Combine(DataFolder(), "reference"),
+                out int passed,
+                out int total
+            );
+
+            Assert.Equal(12, total);
+            Assert.Equal(12, passed);
+        }
+
+        // Наш пакувальник з тими самими сіллю, nonce і жадібним розбором дає ref_01 байт у байт
+        [Fact]
+        public void Ref01IsSameByteForByte()
+        {
+            byte[] teacher = File.ReadAllBytes(
+                Path.Combine(DataFolder(), "reference", "ref_01_single_file.arc")
+            );
+            var volumes = new List<byte[]>();
+            volumes.Add(teacher);
+            List<ArchiveFile> files = ArchiveReader.ReadArchive(volumes, "algo2026");
+
+            var salt = new byte[16];
+            for (int i = 0; i < 16; i++)
+                salt[i] = (byte)i;
+            byte[] noncePrefix = { 1, 2, 3, 4, 5, 6, 7, 8 };
+
+            var settings = new Settings();
+            settings.Parser = ParserKind.Greedy;
+            List<byte[]> ours = ArchiveWriter.CreateArchive(
+                files,
+                "algo2026",
+                settings,
+                salt,
+                noncePrefix
+            );
+
+            Assert.Single(ours);
+            Assert.Equal(teacher, ours[0]);
+        }
+
+        // Якщо бракує тому, перевірка це помічає
+        [Fact]
+        public void MissingVolumeIsNoticed()
+        {
+            string reference = Path.Combine(DataFolder(), "reference");
+            string folder = Path.Combine(
+                Path.GetTempPath(),
+                "sarc-ref-" + Guid.NewGuid().ToString("N")
+            );
+            Directory.CreateDirectory(folder);
+            try
+            {
+                string[] names =
+                {
+                    "ref_06_two_volumes.json",
+                    "ref_06_two_volumes.part0.arc",
+                    "ref_06_two_volumes.part1.arc",
+                };
+                foreach (string name in names)
+                    File.Copy(Path.Combine(reference, name), Path.Combine(folder, name));
+
+                List<string> lines = ReferenceCheck.Build(folder, out int passed, out int total);
+
+                Assert.Equal(0, passed);
+                Assert.Contains("знайдено томів 2, а в .json 3", lines[2]);
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
+        }
+
         // labels.csv без рядка з назвами колонок теж читається: ім'я - перша колонка, тип - друга
         [Fact]
         public void LabelsWithoutHeaderAreRead()
