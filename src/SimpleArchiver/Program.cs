@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Numerics;
 
 namespace SimpleArchiver
 {
@@ -11,13 +12,15 @@ namespace SimpleArchiver
     //   опція --strategy - параметри стиснення за типом файла (разом з --model)
     //   опція --pad байти - вирівняти розмір тому до кратного цьому числу
     //   опція --pad-pow2 - вирівняти розмір тому до степеня двійки
-    // unpack - розпакувати: папка, потім томи
+    //   опція --dh мій.private чужий.public - пароль зі спільного ключа Діффі - Геллмана
+    // unpack - розпакувати: папка, потім томи. Перед папкою можна дати --dh мій.private чужий.public
     // measure - таблиці для звіту по файлах
     // train - навчити класифікатор: папка train, папка valid, файл моделі
     // classify - визначити тип файлів і параметри стиснення для них: файл моделі, потім файли
     // knapsack-table - таблиця рюкзака першого тому: опції --volume і --model, потім файли або папки
     // entropy-table - таблиця ентропії залишків прогнозу: файли або папки, кожна папка - одна група
     // leak-table - таблиця витоку метаданих: опція --pad байти, потім файли або папки
+    // dh-keys - створити ключі Діффі - Геллмана: ім'я, вийдуть файли ім'я.private і ім'я.public
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується
     static class Program
@@ -53,6 +56,8 @@ namespace SimpleArchiver
                     EntropyTable.Print(args, 1);
                 else if (command == "leak-table" && args.Length >= 2)
                     LeakTable.Print(args, 1);
+                else if (command == "dh-keys" && args.Length == 2)
+                    MakeDhKeys(args[1]);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -108,6 +113,8 @@ namespace SimpleArchiver
             Console.WriteLine("entropy-table файли_або_папки");
             Console.WriteLine("leak-table опції файли_або_папки");
             Console.WriteLine("опції leak-table: --pad байти");
+            Console.WriteLine("dh-keys ім'я");
+            Console.WriteLine("опція pack і unpack: --dh мій.private чужий.public замість пароля");
             Console.WriteLine("check");
         }
 
@@ -126,12 +133,23 @@ namespace SimpleArchiver
         static void Pack(string[] args)
         {
             var settings = new Settings();
+            string? password = null;
             int index = 1;
 
-            // Опції на початку: --parser, --split, --predict, --model, --strategy, --pad, --pad-pow2
+            // Опції на початку: --parser, --split, --predict, --model, --strategy, --pad, --pad-pow2, --dh
             while (index < args.Length && args[index].StartsWith("--"))
             {
                 string option = args[index];
+
+                if (option == "--dh")
+                {
+                    if (index + 2 >= args.Length)
+                        throw new ArgumentException("після --dh потрібні два файли ключів");
+
+                    password = DhPassword(args[index + 1], args[index + 2]);
+                    index += 3;
+                    continue;
+                }
 
                 if (option == "--predict")
                 {
@@ -187,7 +205,11 @@ namespace SimpleArchiver
             for (int i = index + 1; i < args.Length; i++)
                 files.Add(new ArchiveFile(Path.GetFileName(args[i]), File.ReadAllBytes(args[i])));
 
-            List<byte[]> volumes = ArchiveWriter.CreateArchive(files, GetPassword(), settings);
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                files,
+                password ?? GetPassword(),
+                settings
+            );
 
             if (volumes.Count == 1)
             {
@@ -214,16 +236,49 @@ namespace SimpleArchiver
             return number;
         }
 
-        // Розпаковує томи в папку
+        // Розпаковує томи в папку. Перед папкою можна дати --dh мій.private чужий.public замість пароля
         static void Unpack(string[] args)
         {
+            int index = 1;
+            string? password = null;
+
+            if (args[index] == "--dh")
+            {
+                if (args.Length < 6)
+                    throw new ArgumentException(
+                        "потрібно: unpack --dh мій.private чужий.public папка томи"
+                    );
+
+                password = DhPassword(args[2], args[3]);
+                index = 4;
+            }
+
             var volumes = new List<byte[]>();
-            for (int i = 2; i < args.Length; i++)
+            for (int i = index + 1; i < args.Length; i++)
                 volumes.Add(File.ReadAllBytes(args[i]));
 
-            List<ArchiveFile> files = ArchiveReader.ReadArchive(volumes, GetPassword());
-            Extractor.SaveFiles(files, args[1]);
+            List<ArchiveFile> files = ArchiveReader.ReadArchive(volumes, password ?? GetPassword());
+            Extractor.SaveFiles(files, args[index]);
             Console.WriteLine($"Розпаковано файлів: {files.Count}");
+        }
+
+        // Пароль архіву зі спільного ключа Діффі - Геллмана: мій секретний ключ і відкритий ключ колеги
+        static string DhPassword(string privatePath, string publicPath)
+        {
+            BigInteger privateKey = DiffieHellman.LoadKey(privatePath);
+            BigInteger otherPublicKey = DiffieHellman.LoadKey(publicPath);
+            return DiffieHellman.SharedPassword(privateKey, otherPublicKey);
+        }
+
+        // Створює пару ключів Діффі - Геллмана і записує їх у файли ім'я.private і ім'я.public
+        static void MakeDhKeys(string name)
+        {
+            BigInteger privateKey = DiffieHellman.GeneratePrivateKey();
+            DiffieHellman.SaveKey(name + ".private", privateKey);
+            DiffieHellman.SaveKey(name + ".public", DiffieHellman.PublicKey(privateKey));
+
+            Console.WriteLine($"Секретний ключ: {name}.private, його нікому не передавайте");
+            Console.WriteLine($"Відкритий ключ: {name}.public, його надішліть колезі");
         }
 
         // Навчає класифікатор: 3 ініціалізації, вибір за macro-F1 на valid

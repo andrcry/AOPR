@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 
 namespace SimpleArchiver.Tests
 {
@@ -227,6 +228,31 @@ namespace SimpleArchiver.Tests
                 }
                 Assert.True(rejected);
             }
+        }
+
+        // Архів, запакований Алісою для Боба, відкриває Боб, а чужий ключ дає E_HMAC
+        [Fact]
+        public void DhArchiveOpensOnlyWithPartnerKey()
+        {
+            BigInteger alicePrivate = DiffieHellman.GeneratePrivateKey();
+            BigInteger bobPrivate = DiffieHellman.GeneratePrivateKey();
+            BigInteger evePrivate = DiffieHellman.GeneratePrivateKey();
+            BigInteger alicePublic = DiffieHellman.PublicKey(alicePrivate);
+            BigInteger bobPublic = DiffieHellman.PublicKey(bobPrivate);
+
+            byte[] data = Encoding.UTF8.GetBytes("Архів для колеги без передавання пароля");
+            string alicePassword = DiffieHellman.SharedPassword(alicePrivate, bobPublic);
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("note.txt", data),
+                alicePassword,
+                new Settings()
+            );
+
+            string bobPassword = DiffieHellman.SharedPassword(bobPrivate, alicePublic);
+            Assert.Equal(data, ArchiveReader.ReadArchive(volumes, bobPassword)[0].Data);
+
+            string evePassword = DiffieHellman.SharedPassword(evePrivate, alicePublic);
+            Assert.Equal(ErrorCodes.Hmac, TestHelpers.ErrorWhenReading(volumes, evePassword));
         }
 
         // Ключ записується у файл і читається назад без змін, пошкоджений файл дає зрозумілу помилку
