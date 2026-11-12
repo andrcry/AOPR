@@ -48,7 +48,12 @@ namespace SimpleArchiver
             foreach (string path in paths)
             {
                 byte[] data = File.ReadAllBytes(path);
-                int fileType = classifier == null ? 0 : classifier.Classify(data);
+                // Тип файла: від класифікатора, а без нього - з labels.csv викладача. Якщо мітки немає - тип 0
+                int fileType = 0;
+                if (classifier != null)
+                    fileType = classifier.Classify(data);
+                else if (Dataset.TypeOf(path) >= 0)
+                    fileType = Dataset.TypeOf(path);
                 bool compress = fileType != FileClassifier.AlreadyCompressed;
 
                 var record = new FileRecord();

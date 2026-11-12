@@ -13,7 +13,8 @@ namespace SimpleArchiver
                 Console.WriteLine(line);
         }
 
-        // Складає рядки таблиці. Кожен аргумент - файл або папка. Папка - одна група, усі її файли рахуються разом
+        // Складає рядки таблиці. Кожен аргумент - файл або папка. Папка - одна група, усі її файли рахуються разом.
+        // Якщо в папці є labels.csv (як у data/corpus від викладача), папка ділиться на групи за типом файла
         public static List<string> Build(string[] args, int start)
         {
             var settings = new Settings();
@@ -21,45 +22,77 @@ namespace SimpleArchiver
             lines.Add("Ентропія байтів і залишків прогнозу, біт на байт");
             lines.Add("група\tфайлів\tбайтів\tентропія_байтів\tентропія_залишків\tпрогноз_допоміг");
 
+            // Крок 1. Складаємо групи: назва групи і її файли
+            var groupNames = new List<string>();
+            var groupFiles = new List<List<string>>();
+
             for (int i = start; i < args.Length; i++)
             {
                 List<string> files = InputFiles.Collect(new string[] { args[i] }, 0);
 
-                var byteCounts = new long[256];
-                var residualCounts = new long[256];
-                long total = 0;
-
-                foreach (string file in files)
+                if (Directory.Exists(args[i]) && File.Exists(Path.Combine(args[i], "labels.csv")))
                 {
-                    byte[] data = File.ReadAllBytes(file);
-                    total += data.Length;
-                    AddCounts(data, byteCounts);
-
-                    // Прогноз рахується по блоках, так само як в архіваторі
-                    for (int offset = 0; offset < data.Length; offset += settings.BlockSize)
+                    // Одна група на кожен тип 0-6
+                    for (int type = 0; type < FileClassifier.ClassCount; type++)
                     {
-                        int size = Math.Min(settings.BlockSize, data.Length - offset);
-                        var chunk = new byte[size];
-                        Array.Copy(data, offset, chunk, 0, size);
+                        var ofType = new List<string>();
+                        foreach (string file in files)
+                        {
+                            if (Dataset.TypeOf(file) == type)
+                                ofType.Add(file);
+                        }
 
-                        BytePredictor predictor = BytePredictor.Train(
-                            chunk,
-                            settings.HistoryLength
-                        );
-                        AddCounts(predictor.MakeResiduals(chunk), residualCounts);
+                        if (ofType.Count > 0)
+                        {
+                            groupNames.Add(FileClassifier.classNames[type]);
+                            groupFiles.Add(ofType);
+                        }
                     }
                 }
-
-                double byteEntropy = Entropy(byteCounts, total);
-                double residualEntropy = Entropy(residualCounts, total);
-                string helped = residualEntropy < byteEntropy - minGain ? "так" : "ні";
-
-                lines.Add(
-                    $"{GroupName(args[i])}\t{files.Count}\t{total}\t{byteEntropy:F3}\t{residualEntropy:F3}\t{helped}"
-                );
+                else
+                {
+                    groupNames.Add(GroupName(args[i]));
+                    groupFiles.Add(files);
+                }
             }
 
+            // Крок 2. Для кожної групи ентропія байтів і ентропія залишків прогнозу
+            for (int g = 0; g < groupNames.Count; g++)
+                lines.Add(GroupRow(groupNames[g], groupFiles[g], settings));
+
             return lines;
+        }
+
+        // Рядок таблиці для однієї групи файлів
+        static string GroupRow(string name, List<string> files, Settings settings)
+        {
+            var byteCounts = new long[256];
+            var residualCounts = new long[256];
+            long total = 0;
+
+            foreach (string file in files)
+            {
+                byte[] data = File.ReadAllBytes(file);
+                total += data.Length;
+                AddCounts(data, byteCounts);
+
+                // Прогноз рахується по блоках, так само як в архіваторі
+                for (int offset = 0; offset < data.Length; offset += settings.BlockSize)
+                {
+                    int size = Math.Min(settings.BlockSize, data.Length - offset);
+                    var chunk = new byte[size];
+                    Array.Copy(data, offset, chunk, 0, size);
+
+                    BytePredictor predictor = BytePredictor.Train(chunk, settings.HistoryLength);
+                    AddCounts(predictor.MakeResiduals(chunk), residualCounts);
+                }
+            }
+
+            double byteEntropy = Entropy(byteCounts, total);
+            double residualEntropy = Entropy(residualCounts, total);
+            string helped = residualEntropy < byteEntropy - minGain ? "так" : "ні";
+
+            return $"{name}\t{files.Count}\t{total}\t{byteEntropy:F3}\t{residualEntropy:F3}\t{helped}";
         }
 
         // Назва групи: ім'я папки або файла без шляху

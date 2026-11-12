@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace SimpleArchiver
 {
@@ -14,7 +13,7 @@ namespace SimpleArchiver
     //   опція --pad-pow2 - вирівняти розмір тому до степеня двійки
     //   опція --dh мій.private чужий.public - пароль зі спільного ключа Діффі - Геллмана
     // unpack - розпакувати: папка, потім томи. Перед папкою можна дати --dh мій.private чужий.public
-    // measure - таблиці для звіту по файлах: файли або папки
+    // measure - таблиці розборів LZ77 і розбиття на блоки: файли або папки. Групи файлів беруться з labels.csv
     // train - навчити класифікатор: папка train, папка valid, файл моделі
     // classify - визначити тип файлів і параметри стиснення для них: файл моделі, потім файли або папки
     // knapsack-table - таблиця рюкзака першого тому: опції --volume і --model, потім файли або папки
@@ -52,7 +51,7 @@ namespace SimpleArchiver
                 else if (command == "unpack" && args.Length >= 3)
                     Unpack(args);
                 else if (command == "measure" && args.Length >= 2)
-                    Measure(args);
+                    MeasureTable.Print(args, 1);
                 else if (command == "train" && args.Length == 4)
                     Train(args);
                 else if (command == "classify" && args.Length >= 3)
@@ -370,103 +369,6 @@ namespace SimpleArchiver
                     $"{Path.GetFileName(path)}: тип {type}, {FileClassifier.classNames[type]}, {strategies[type].Describe()}"
                 );
             }
-        }
-
-        // Таблиці для звіту: розбори LZ77 і розбиття на блоки, з прогнозом і без
-        static void Measure(string[] args)
-        {
-            List<string> paths = InputFiles.Collect(args, 1);
-
-            Console.WriteLine("Розбір LZ77, блоки по 64 КБ");
-            Console.WriteLine(
-                "файл\tрозмір\tрозбір\tрезультат\tчас_мс\tлітерали\tпосилання\tвартість_бітів"
-            );
-
-            for (int i = 0; i < paths.Count; i++)
-            {
-                byte[] data = File.ReadAllBytes(paths[i]);
-                string name = Path.GetFileName(paths[i]);
-
-                Console.WriteLine(
-                    $"{name}\t{data.Length}\tжадібний\t{MeasureParser(data, ParserKind.Greedy)}"
-                );
-                Console.WriteLine(
-                    $"{name}\t{data.Length}\tлінивий\t{MeasureParser(data, ParserKind.Lazy)}"
-                );
-                Console.WriteLine(
-                    $"{name}\t{data.Length}\tДП\t{MeasureParser(data, ParserKind.Dp)}"
-                );
-            }
-
-            Console.WriteLine();
-            Console.WriteLine(
-                "Розбиття на блоки і прогноз, розмір блоків разом із записами таблиці блоків"
-            );
-            Console.WriteLine(
-                "файл\tфіксоване\tДП-розбиття\tфіксоване+прогноз\tДП-розбиття+прогноз"
-            );
-
-            for (int i = 0; i < paths.Count; i++)
-            {
-                byte[] data = File.ReadAllBytes(paths[i]);
-                string fixedSize = MeasureSplit(data, false, false);
-                string dpSize = MeasureSplit(data, true, false);
-                string fixedPredicted = MeasureSplit(data, false, true);
-                string dpPredicted = MeasureSplit(data, true, true);
-
-                Console.WriteLine(
-                    $"{Path.GetFileName(paths[i])}\t{fixedSize}\t{dpSize}\t{fixedPredicted}\t{dpPredicted}"
-                );
-            }
-        }
-
-        // Розбирає файл по блоках і повертає рядок таблиці
-        static string MeasureParser(byte[] data, ParserKind kind)
-        {
-            var settings = new Settings();
-            settings.Parser = kind;
-
-            long size = 0;
-            long literals = 0;
-            long matches = 0;
-            long fixedCost = 0;
-            Stopwatch timer = Stopwatch.StartNew();
-
-            for (int offset = 0; offset < data.Length; offset += settings.BlockSize)
-            {
-                int length = Math.Min(settings.BlockSize, data.Length - offset);
-                var chunk = new byte[length];
-                Array.Copy(data, offset, chunk, 0, length);
-
-                List<Token> tokens = Lz77.Parse(chunk, kind, settings.MaxChain);
-                fixedCost += Lz77.FixedCost(tokens);
-
-                foreach (Token token in tokens)
-                {
-                    if (token.IsMatch)
-                        matches++;
-                    else
-                        literals++;
-                }
-
-                // Якщо стиснення не вигідне, блок займає raw_len (NO_COMPRESSION)
-                size += Math.Min(BlockCoder.Encode(tokens).Length, chunk.Length);
-            }
-
-            return $"{size}\t{timer.ElapsedMilliseconds}\t{literals}\t{matches}\t{fixedCost}";
-        }
-
-        // Рахує розмір блоків для фіксованого або ДП-розбиття, з прогнозом або без
-        static string MeasureSplit(byte[] data, bool dpSplit, bool prediction)
-        {
-            var settings = new Settings();
-            settings.UsePrediction = prediction;
-
-            List<PreparedBlock> blocks = dpSplit
-                ? BlockSplitter.SplitDp(data, settings)
-                : BlockSplitter.SplitFixed(data, settings, true);
-
-            return BlockSplitter.TotalSize(blocks).ToString();
         }
     }
 }
