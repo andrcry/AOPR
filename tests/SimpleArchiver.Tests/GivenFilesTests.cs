@@ -186,6 +186,51 @@ namespace SimpleArchiver.Tests
             Assert.Equal(teacher, ours[0]);
         }
 
+        // Порожній файл записується одним блоком raw_len = 0 без стиснення, як у ref_02_empty_file,
+        // і архів має той самий розмір 115 байтів
+        [Fact]
+        public void EmptyFileIsLikeRef02()
+        {
+            var files = new List<ArchiveFile>();
+            files.Add(new ArchiveFile("empty.dat", new byte[0]));
+
+            List<Payload> payloads = ArchiveWriter.BuildPayloads(files, new Settings());
+            Assert.Single(payloads);
+            Assert.Single(payloads[0].Blocks);
+            Assert.Equal(0, payloads[0].Blocks[0].RawLength);
+            Assert.Empty(payloads[0].Blocks[0].Data);
+            Assert.Equal(BlockRecord.NoCompressionFlag, payloads[0].Blocks[0].Flags);
+
+            byte[] teacher = File.ReadAllBytes(
+                Path.Combine(DataFolder(), "reference", "ref_02_empty_file.arc")
+            );
+            List<byte[]> ours = ArchiveWriter.CreateArchive(files, "algo2026", new Settings());
+            Assert.Equal(teacher.Length, ours[0].Length);
+            Assert.Empty(ArchiveReader.ReadArchive(ours, "algo2026")[0].Data);
+        }
+
+        // Порожній файл поруч із великими файлами теж відновлюється, навіть якщо томів кілька
+        [Fact]
+        public void EmptyFileInManyVolumes()
+        {
+            var files = new List<ArchiveFile>();
+            files.Add(new ArchiveFile("noise.bin", TestHelpers.RandomBytes(150000, 80)));
+            files.Add(new ArchiveFile("empty.dat", new byte[0]));
+
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(files, "algo2026", new Settings());
+            List<ArchiveFile> restored = ArchiveReader.ReadArchive(volumes, "algo2026");
+
+            Assert.True(volumes.Count > 1);
+            Assert.Equal(2, restored.Count);
+            foreach (ArchiveFile file in restored)
+            {
+                if (file.Name == "empty.dat")
+                    Assert.Empty(file.Data);
+                else
+                    Assert.Equal(150000, file.Data.Length);
+            }
+        }
+
         // Якщо бракує тому, перевірка це помічає
         [Fact]
         public void MissingVolumeIsNoticed()

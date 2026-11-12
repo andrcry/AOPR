@@ -22,7 +22,7 @@ namespace SimpleArchiver
             // Хоча б один том є завжди, навіть для порожнього архіву
             while (isFirst || remaining.Count > 0)
             {
-                List<int> fileNumbers = FilesForTable(files, remaining, isFirst);
+                List<int> fileNumbers = FilesForTable(files, remaining);
                 if (fileNumbers.Count > maxCount)
                     throw new InvalidOperationException("забагато файлів для одного тому");
 
@@ -85,12 +85,8 @@ namespace SimpleArchiver
                 : Knapsack.SolveGreedy(weights, values, capacity);
         }
 
-        // Файли, у яких ще є блоки. Порожні файли блоків не мають, тому йдуть у перший том
-        static List<int> FilesForTable(
-            List<FileRecord> files,
-            List<PreparedBlock> remaining,
-            bool isFirst
-        )
+        // Файли, у яких ще є блоки. Порожній файл теж має один блок (raw_len = 0), тому окремого правила не треба
+        static List<int> FilesForTable(List<FileRecord> files, List<PreparedBlock> remaining)
         {
             var hasBlocks = new bool[files.Count];
             foreach (PreparedBlock block in remaining)
@@ -99,7 +95,7 @@ namespace SimpleArchiver
             var result = new List<int>();
             for (int f = 0; f < files.Count; f++)
             {
-                if (hasBlocks[f] || (isFirst && files[f].OriginalSize == 0))
+                if (hasBlocks[f])
                     result.Add(f);
             }
 
