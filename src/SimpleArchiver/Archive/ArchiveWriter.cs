@@ -28,6 +28,31 @@ namespace SimpleArchiver
             byte[] noncePrefix
         )
         {
+            List<Payload> payloads = BuildPayloads(files, settings);
+
+            // Крок 6. Зашифрувати і запломбувати кожен том
+            Keys keys = Keys.Derive(password, salt); // один раз на весь архів
+
+            var volumes = new List<byte[]>();
+            for (int i = 0; i < payloads.Count; i++)
+                volumes.Add(
+                    Volume.Seal(
+                        i,
+                        payloads.Count,
+                        salt,
+                        MakeNonce(noncePrefix, i),
+                        payloads[i].ToBytes(),
+                        keys
+                    )
+                );
+
+            return volumes;
+        }
+
+        // Готує навантаження всіх томів без шифрування: типи файлів, блоки, томи, вирівнювання.
+        // Розмір кожного тому дорівнює 41 + довжина навантаження + 32
+        public static List<Payload> BuildPayloads(List<ArchiveFile> files, Settings settings)
+        {
             CheckFiles(files);
 
             FileClassifier? classifier = null;
@@ -41,7 +66,7 @@ namespace SimpleArchiver
             {
                 byte[] data = files[fileNumber].Data;
 
-                // Тип файла визначає перцептрон
+                // Крок 1. Тип файла визначає перцептрон
                 int fileType = classifier == null ? 0 : classifier.Classify(data);
 
                 // Вже стиснуті файли (JPEG, ZIP, MP3) немає сенсу стискати ще раз
@@ -61,14 +86,14 @@ namespace SimpleArchiver
                 record.OriginalSize = data.Length;
                 record.Crc = Crc32.Compute(data);
                 record.FileType = fileType;
-                record.Strategy = compress ? (int)settings.Parser : 0;
+                record.Strategy = compress ? (int)fileSettings.Parser : 0;
                 records.Add(record);
 
-                // Розбиття на блоки: фіксоване або ДП
+                // Крок 3. Розбиття на блоки: фіксоване або ДП
                 List<PreparedBlock> fileBlocks =
-                    compress && settings.UseDpBlockSplit
-                        ? BlockSplitter.SplitDp(data, settings)
-                        : BlockSplitter.SplitFixed(data, settings, compress);
+                    compress && fileSettings.UseDpBlockSplit
+                        ? BlockSplitter.SplitDp(data, fileSettings)
+                        : BlockSplitter.SplitFixed(data, fileSettings, compress);
 
                 for (int b = 0; b < fileBlocks.Count; b++)
                 {
@@ -78,26 +103,28 @@ namespace SimpleArchiver
                 }
             }
 
-            // Розкласти блоки по томах (рюкзак)
+            // Крок 4. Розкласти блоки по томах (рюкзак)
             List<Payload> payloads = VolumePacker.Pack(records, blocks, settings);
 
-            // Зашифрувати і запломбувати кожен том
-            Keys keys = Keys.Derive(password, salt); // один раз на весь архів
+            //Вирівняти розмір кожного тому, якщо це увімкнено
+            if (VolumePadding.IsEnabled(settings))
+                AddPadding(payloads, settings);
 
-            var volumes = new List<byte[]>();
-            for (int i = 0; i < payloads.Count; i++)
-                volumes.Add(
-                    Volume.Seal(
-                        i,
-                        payloads.Count,
-                        salt,
-                        MakeNonce(noncePrefix, i),
-                        payloads[i].ToBytes(),
-                        keys
-                    )
-                );
+            return payloads;
+        }
 
-            return volumes;
+        // Доповнює навантаження кожного тому нулями до вирівняного розміру
+        static void AddPadding(List<Payload> payloads, Settings settings)
+        {
+            int maxLength = settings.MaxVolumeBytes - VolumeHeader.Size - VolumeHeader.MacSize;
+
+            foreach (Payload payload in payloads)
+            {
+                payload.Flags |= Payload.PaddingFlag;
+                int length = payload.ToBytes().Length;
+                payload.PaddingLength =
+                    VolumePadding.PaddedLength(length, settings, maxLength) - length;
+            }
         }
 
         // Кодує блок, дозволяючи стиснення
@@ -165,12 +192,10 @@ namespace SimpleArchiver
             return nonce;
         }
 
-        // Перевіряє, що імена безпечні, не повторюються і не задовгі.
-        // Повтор шукаємо без урахування регістру: у Windows A.txt і a.txt - той самий файл,
-        // тому такий архів там не розпакувався б повністю
+        // Перевіряє, що імена безпечні, не повторюються і не задовгі
         static void CheckFiles(List<ArchiveFile> files)
         {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var names = new List<string>();
 
             foreach (ArchiveFile file in files)
             {
@@ -180,10 +205,8 @@ namespace SimpleArchiver
                     throw new ArgumentException($"два файли з однаковим ім'ям: {file.Name}");
                 if (Encoding.UTF8.GetByteCount(file.Name) > 65535)
                     throw new ArgumentException("ім'я файла задовге");
-                if (!names.Add(file.Name))
-                    throw new ArgumentException(
-                        $"два файли з однаковим ім'ям (без урахування регістру): {file.Name}"
-                    );
+
+                names.Add(file.Name);
             }
         }
     }

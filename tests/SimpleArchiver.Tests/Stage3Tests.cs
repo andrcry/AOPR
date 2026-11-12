@@ -359,7 +359,7 @@ namespace SimpleArchiver.Tests
         public void PayloadUnknownFlagIsRejected()
         {
             byte[] payload = new Payload().ToBytes();
-            payload[2] = 0x02; // невідомий біт flags
+            payload[2] = 0x04; // невідомий біт flags (0x01 - PREDICTION, 0x02 - PADDING)
 
             byte[] volume = TestHelpers.SealPayload(payload);
             Assert.Equal(

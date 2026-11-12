@@ -9,6 +9,8 @@ namespace SimpleArchiver
     //   опція --predict - прогноз наступного байта
     //   опція --model файл - класифікатор типу файла
     //   опція --strategy - параметри стиснення за типом файла (разом з --model)
+    //   опція --pad байти - вирівняти розмір тому до кратного цьому числу
+    //   опція --pad-pow2 - вирівняти розмір тому до степеня двійки
     // unpack - розпакувати: папка, потім томи
     // measure - таблиці для звіту по файлах
     // train - навчити класифікатор: папка train, папка valid, файл моделі
@@ -93,6 +95,7 @@ namespace SimpleArchiver
             Console.WriteLine(
                 "опції pack: --parser greedy, --parser lazy, --parser dp, --split dp, --predict, --model файл, --strategy"
             );
+            Console.WriteLine("опції pack для захисту: --pad байти, --pad-pow2");
             Console.WriteLine("unpack папка томи");
             Console.WriteLine("measure файли");
             Console.WriteLine("train папка_train папка_valid файл_моделі");
@@ -120,7 +123,7 @@ namespace SimpleArchiver
             var settings = new Settings();
             int index = 1;
 
-            // Опції на початку: --parser, --split, --predict, --model, --strategy
+            // Опції на початку: --parser, --split, --predict, --model, --strategy, --pad, --pad-pow2
             while (index < args.Length && args[index].StartsWith("--"))
             {
                 string option = args[index];
@@ -135,6 +138,13 @@ namespace SimpleArchiver
                 if (option == "--strategy")
                 {
                     settings.UseTypeStrategy = true;
+                    index++;
+                    continue;
+                }
+
+                if (option == "--pad-pow2")
+                {
+                    settings.PadToPowerOfTwo = true;
                     index++;
                     continue;
                 }
@@ -155,6 +165,8 @@ namespace SimpleArchiver
                     settings.UseDpBlockSplit = true;
                 else if (option == "--model")
                     settings.ClassifierPath = value;
+                else if (option == "--pad")
+                    settings.PadUnit = ParsePositive(value, option);
                 else
                     throw new ArgumentException($"невідома опція {option} {value}");
             }
@@ -186,6 +198,15 @@ namespace SimpleArchiver
                 File.WriteAllBytes(path, volumes[i]);
                 Console.WriteLine($"Том {i}: {path}, {volumes[i].Length} байтів");
             }
+        }
+
+        // Перетворює текст опції на додатне ціле число
+        static int ParsePositive(string value, string option)
+        {
+            if (!int.TryParse(value, out int number) || number <= 0)
+                throw new ArgumentException($"після {option} потрібне додатне ціле число");
+
+            return number;
         }
 
         // Розпаковує томи в папку
@@ -240,7 +261,7 @@ namespace SimpleArchiver
             {
                 int type = classifier.Classify(File.ReadAllBytes(args[i]));
                 Console.WriteLine(
-                    $"{Path.GetFileName(args[i])}: тип {type}, {FileClassifier.classNames[type]}"
+                    $"{Path.GetFileName(args[i])}: тип {type}, {FileClassifier.classNames[type]}, {strategies[type].Describe()}"
                 );
             }
         }

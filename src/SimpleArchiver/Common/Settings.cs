@@ -24,6 +24,10 @@ namespace SimpleArchiver
         public bool UseDpKnapsack { get; set; } = true; // true - рюкзак ДП, false - жадібний
         public int[] TypePriorities { get; set; } = { 1, 1, 1, 1, 1, 1, 1 }; // пріоритети_типів 0-6
 
+        // Захист від аналізу метаданих
+        public int PadUnit { get; set; } = 0; // вирівнювати навантаження тому до кратного цьому числу байтів, 0 - не вирівнювати
+        public bool PadToPowerOfTwo { get; set; } = false; // true - вирівнювати навантаження тому до степеня двійки
+
         // Повертає копію налаштувань, щоб змінити її для одного файла, не чіпаючи загальні
         public Settings Copy()
         {
