@@ -4,7 +4,8 @@ namespace SimpleArchiver
     public static class InputFiles
     {
         // Повертає файли з аргументів, починаючи з номера start.
-        // Файли з папок беруться за абеткою. Приховані файли (.DS_Store, .gitkeep) пропускаються
+        // Файли з папок беруться за абеткою. Приховані файли (.DS_Store, .gitkeep) і labels.csv пропускаються:
+        // labels.csv - це опис корпусу від викладача, а не файл корпусу
         public static List<string> Collect(string[] args, int start)
         {
             var files = new List<string>();
@@ -18,7 +19,10 @@ namespace SimpleArchiver
 
                     foreach (string file in inside)
                     {
-                        if (!Path.GetFileName(file).StartsWith("."))
+                        if (
+                            !Path.GetFileName(file).StartsWith(".")
+                            && Path.GetFileName(file) != "labels.csv"
+                        )
                             files.Add(file);
                     }
                 }
