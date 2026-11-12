@@ -1,12 +1,18 @@
 namespace SimpleArchiver
 {
-    // Налаштування архіватора. Справжні значення взяти з team_config.json
+    // Налаштування архіватора. Розмір блока, розмір тому і пріоритети типів беруться з team_config.json
     public class Settings
     {
+        // Значення з team_config.json. Тут записані значення команди T01, а програма на старті
+        // читає файл і замінює їх (TeamConfig.Apply). Кожні нові налаштування беруть ці значення
+        public static int teamBlockSize = 16384; // block_size
+        public static int teamMaxVolumeBytes = 65536; // max_volume_bytes
+        public static int[] teamPriorities = { 3, 3, 2, 2, 2, 1, 1 }; // пріоритети_типів 0-6
+
         // Розбиття на блоки
-        public int BlockSize { get; set; } = 65536; // block_size: найбільший розмір блока
+        public int BlockSize { get; set; } = teamBlockSize; // найбільший розмір блока
         public bool UseDpBlockSplit { get; set; } = false; // true - ДП-розбиття на блоки (просунутий рівень)
-        public int SplitUnit { get; set; } = 8192; // крок, з яким ДП шукає межі блоків
+        public int SplitUnit { get; set; } = 2048; // крок, з яким ДП шукає межі блоків, BlockSize має ділитися на нього
 
         // LZ77
         public ParserKind Parser { get; set; } = ParserKind.Lazy;
@@ -20,9 +26,9 @@ namespace SimpleArchiver
         public TypeStrategy[] TypeStrategies { get; set; } = TypeStrategy.Defaults(); // параметри стиснення для типів 0-6
 
         // Томи
-        public int MaxVolumeBytes { get; set; } = 1048576; // max_volume_bytes
+        public int MaxVolumeBytes { get; set; } = teamMaxVolumeBytes; // найбільший розмір тому
         public bool UseDpKnapsack { get; set; } = true; // true - рюкзак ДП, false - жадібний
-        public int[] TypePriorities { get; set; } = { 1, 1, 1, 1, 1, 1, 1 }; // пріоритети_типів 0-6
+        public int[] TypePriorities { get; set; } = (int[])teamPriorities.Clone(); // цінність блока за типом 0-6
 
         // Захист від аналізу метаданих
         public int PadUnit { get; set; } = 0; // вирівнювати навантаження тому до кратного цьому числу байтів, 0 - не вирівнювати

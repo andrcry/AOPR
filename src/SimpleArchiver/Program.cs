@@ -4,7 +4,7 @@ using System.Numerics;
 namespace SimpleArchiver
 {
     // Команди програми:
-    // pack - створити архів. Спочатку опції, потім ім'я архіву і файли.
+    // pack - створити архів. Спочатку опції, потім ім'я архіву і файли або папки.
     //   опція --parser greedy, lazy або dp - спосіб розбору LZ77, за замовчуванням lazy
     //   опція --split dp - ДП-розбиття на блоки
     //   опція --predict - прогноз наступного байта
@@ -14,15 +14,19 @@ namespace SimpleArchiver
     //   опція --pad-pow2 - вирівняти розмір тому до степеня двійки
     //   опція --dh мій.private чужий.public - пароль зі спільного ключа Діффі - Геллмана
     // unpack - розпакувати: папка, потім томи. Перед папкою можна дати --dh мій.private чужий.public
-    // measure - таблиці для звіту по файлах
+    // measure - таблиці для звіту по файлах: файли або папки
     // train - навчити класифікатор: папка train, папка valid, файл моделі
-    // classify - визначити тип файлів і параметри стиснення для них: файл моделі, потім файли
+    // classify - визначити тип файлів і параметри стиснення для них: файл моделі, потім файли або папки
     // knapsack-table - таблиця рюкзака першого тому: опції --volume і --model, потім файли або папки
     // entropy-table - таблиця ентропії залишків прогнозу: файли або папки, кожна папка - одна група
     // leak-table - таблиця витоку метаданих: опція --pad байти, потім файли або папки
     // dh-keys - створити ключі Діффі - Геллмана: ім'я, вийдуть файли ім'я.private і ім'я.public
+    // demo-data - створити замінник файлів викладача для демонстрації: опція --seed число, потім папка
+    // ref-check - перевірити еталонні і зіпсовані архіви: папка reference
+    // team-config - показати параметри з data/team_config.json або з файла, переданого після команди
     // check - контрольні точки всіх алгоритмів
-    // Пароль береться зі змінної SARC_PASSWORD або запитується
+    // Пароль береться зі змінної SARC_PASSWORD або запитується.
+    // На старті програма читає data/team_config.json: розмір блока, розмір тому і пріоритети типів
     static class Program
     {
         // Читає команду і запускає потрібну дію
@@ -38,6 +42,9 @@ namespace SimpleArchiver
 
             try
             {
+                // Параметри команди від викладача стають стандартними для всіх команд
+                TeamConfig.LoadIfExists(TeamConfig.DefaultPath).Apply();
+
                 string command = args[0];
 
                 if (command == "pack" && args.Length >= 3)
@@ -58,6 +65,12 @@ namespace SimpleArchiver
                     LeakTable.Print(args, 1);
                 else if (command == "dh-keys" && args.Length == 2)
                     MakeDhKeys(args[1]);
+                else if (command == "demo-data" && args.Length >= 2)
+                    DemoData.Run(args);
+                else if (command == "ref-check" && args.Length == 2)
+                    return ReferenceCheck.Print(args[1]) ? 0 : 1;
+                else if (command == "team-config" && args.Length <= 2)
+                    PrintTeamConfig(args);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -99,15 +112,15 @@ namespace SimpleArchiver
         static void PrintHelp()
         {
             Console.WriteLine("Використання:");
-            Console.WriteLine("pack опції архів.arc файли");
+            Console.WriteLine("pack опції архів.arc файли_або_папки");
             Console.WriteLine(
                 "опції pack: --parser greedy, --parser lazy, --parser dp, --split dp, --predict, --model файл, --strategy"
             );
             Console.WriteLine("опції pack для захисту: --pad байти, --pad-pow2");
             Console.WriteLine("unpack папка томи");
-            Console.WriteLine("measure файли");
+            Console.WriteLine("measure файли_або_папки");
             Console.WriteLine("train папка_train папка_valid файл_моделі");
-            Console.WriteLine("classify файл_моделі файли");
+            Console.WriteLine("classify файл_моделі файли_або_папки");
             Console.WriteLine("knapsack-table опції файли_або_папки");
             Console.WriteLine("опції knapsack-table: --volume байти, --model файл");
             Console.WriteLine("entropy-table файли_або_папки");
@@ -115,6 +128,10 @@ namespace SimpleArchiver
             Console.WriteLine("опції leak-table: --pad байти");
             Console.WriteLine("dh-keys ім'я");
             Console.WriteLine("опція pack і unpack: --dh мій.private чужий.public замість пароля");
+            Console.WriteLine("demo-data опції папка");
+            Console.WriteLine("опції demo-data: --seed число");
+            Console.WriteLine("ref-check папка_reference");
+            Console.WriteLine("team-config або team-config файл");
             Console.WriteLine("check");
         }
 
@@ -202,8 +219,8 @@ namespace SimpleArchiver
 
             string archivePath = args[index];
             var files = new List<ArchiveFile>();
-            for (int i = index + 1; i < args.Length; i++)
-                files.Add(new ArchiveFile(Path.GetFileName(args[i]), File.ReadAllBytes(args[i])));
+            foreach (string path in InputFiles.Collect(args, index + 1))
+                files.Add(new ArchiveFile(Path.GetFileName(path), File.ReadAllBytes(path)));
 
             List<byte[]> volumes = ArchiveWriter.CreateArchive(
                 files,
@@ -292,23 +309,52 @@ namespace SimpleArchiver
             if (train.Count == 0 || valid.Count == 0)
                 throw new InvalidOperationException("вибірка порожня: перевірте labels.csv");
 
+            // Протокол навчання з team_config.json: стільки ініціалізацій, скільки задав викладач
+            TeamConfig config = TeamConfig.LoadIfExists(TeamConfig.DefaultPath);
+            var seeds = new int[config.Initializations];
+            for (int i = 0; i < seeds.Length; i++)
+                seeds[i] = i + 1;
+
             FileClassifier classifier = FileClassifier.TrainBest(
                 train,
                 valid,
-                new[] { 1, 2, 3 },
+                seeds,
                 300,
                 0.1,
                 true
             );
 
             int[,] confusion = Metrics.Confusion(classifier.Net, valid);
-            Console.WriteLine(
-                $"Найкраща модель: macro-F1 на valid = {Metrics.MacroF1(confusion):F4}"
-            );
+            double f1 = Metrics.MacroF1(confusion);
+            Console.WriteLine($"Найкраща модель: macro-F1 на valid = {f1:F4}");
             Metrics.PrintConfusion(confusion);
+
+            // Порівняння з порогом і базовими лініями з team_config.json
+            Console.WriteLine(
+                $"Поріг F1_min = {config.F1Min}: {(f1 >= config.F1Min ? "пройдено" : "НЕ пройдено")}"
+            );
+            Console.WriteLine(
+                $"Базові лінії: один клас {config.BaselineMajority}, випадковий вибір {config.BaselineRandom}"
+            );
 
             classifier.Save(args[3]);
             Console.WriteLine($"Ваги збережено у {args[3]}");
+        }
+
+        // Друкує параметри з team_config.json і перевіряє, що програма їх використовує
+        static void PrintTeamConfig(string[] args)
+        {
+            string path = args.Length == 2 ? args[1] : TeamConfig.DefaultPath;
+            if (!File.Exists(path))
+                throw new FileNotFoundException($"файла {path} немає");
+
+            foreach (string line in TeamConfig.Load(path).Describe())
+                Console.WriteLine(line);
+
+            var settings = new Settings();
+            Console.WriteLine(
+                $"Програма зараз бере: блок {settings.BlockSize}, том {settings.MaxVolumeBytes}"
+            );
         }
 
         // Показує тип, який перцептрон визначив для кожного файла, і параметри стиснення для цього типу
@@ -317,11 +363,11 @@ namespace SimpleArchiver
             FileClassifier classifier = FileClassifier.Load(args[1]);
             TypeStrategy[] strategies = new Settings().TypeStrategies;
 
-            for (int i = 2; i < args.Length; i++)
+            foreach (string path in InputFiles.Collect(args, 2))
             {
-                int type = classifier.Classify(File.ReadAllBytes(args[i]));
+                int type = classifier.Classify(File.ReadAllBytes(path));
                 Console.WriteLine(
-                    $"{Path.GetFileName(args[i])}: тип {type}, {FileClassifier.classNames[type]}, {strategies[type].Describe()}"
+                    $"{Path.GetFileName(path)}: тип {type}, {FileClassifier.classNames[type]}, {strategies[type].Describe()}"
                 );
             }
         }
@@ -329,15 +375,17 @@ namespace SimpleArchiver
         // Таблиці для звіту: розбори LZ77 і розбиття на блоки, з прогнозом і без
         static void Measure(string[] args)
         {
+            List<string> paths = InputFiles.Collect(args, 1);
+
             Console.WriteLine("Розбір LZ77, блоки по 64 КБ");
             Console.WriteLine(
                 "файл\tрозмір\tрозбір\tрезультат\tчас_мс\tлітерали\tпосилання\tвартість_бітів"
             );
 
-            for (int i = 1; i < args.Length; i++)
+            for (int i = 0; i < paths.Count; i++)
             {
-                byte[] data = File.ReadAllBytes(args[i]);
-                string name = Path.GetFileName(args[i]);
+                byte[] data = File.ReadAllBytes(paths[i]);
+                string name = Path.GetFileName(paths[i]);
 
                 Console.WriteLine(
                     $"{name}\t{data.Length}\tжадібний\t{MeasureParser(data, ParserKind.Greedy)}"
@@ -358,16 +406,16 @@ namespace SimpleArchiver
                 "файл\tфіксоване\tДП-розбиття\tфіксоване+прогноз\tДП-розбиття+прогноз"
             );
 
-            for (int i = 1; i < args.Length; i++)
+            for (int i = 0; i < paths.Count; i++)
             {
-                byte[] data = File.ReadAllBytes(args[i]);
+                byte[] data = File.ReadAllBytes(paths[i]);
                 string fixedSize = MeasureSplit(data, false, false);
                 string dpSize = MeasureSplit(data, true, false);
                 string fixedPredicted = MeasureSplit(data, false, true);
                 string dpPredicted = MeasureSplit(data, true, true);
 
                 Console.WriteLine(
-                    $"{Path.GetFileName(args[i])}\t{fixedSize}\t{dpSize}\t{fixedPredicted}\t{dpPredicted}"
+                    $"{Path.GetFileName(paths[i])}\t{fixedSize}\t{dpSize}\t{fixedPredicted}\t{dpPredicted}"
                 );
             }
         }

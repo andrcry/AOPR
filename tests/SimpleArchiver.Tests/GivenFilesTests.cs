@@ -1,7 +1,7 @@
 namespace SimpleArchiver.Tests
 {
     // Перевірки на файлах викладача з папки data/
-    public class GivenFilesTests
+    public class TeacherFilesTests
     {
         // Папка data/ проєкту. Тести запускаються з tests/.../bin/..., тому піднімаємося вгору, доки не знайдемо SimpleArchiver.slnx
         static string DataFolder()
@@ -67,6 +67,78 @@ namespace SimpleArchiver.Tests
             Assert.Equal(21, files.Count);
             foreach (string file in files)
                 Assert.NotEqual("labels.csv", Path.GetFileName(file));
+        }
+
+        // team_config.json читається: розмір блока і тому, пріоритети за назвами типів, метрика Q, F1_min
+        [Fact]
+        public void TeamConfigIsRead()
+        {
+            TeamConfig config = TeamConfig.Load(Path.Combine(DataFolder(), "team_config.json"));
+
+            Assert.Equal("T01", config.Team);
+            Assert.Equal(2001, config.Seed);
+            Assert.Equal("algo2026", config.Password);
+            Assert.Equal(16384, config.BlockSize);
+            Assert.Equal(65536, config.MaxVolumeBytes);
+            Assert.Equal(new int[] { 3, 3, 2, 2, 2, 1, 1 }, config.TypePriorities);
+            Assert.Equal(0.7, config.Alpha);
+            Assert.Equal(0.3, config.Beta);
+            Assert.Equal(30.0, config.TRef);
+            Assert.Equal(0.61, config.F1Min);
+            Assert.Equal(3, config.Initializations);
+        }
+
+        // Значення за замовчуванням у Settings і TeamConfig такі самі, як у файлі викладача.
+        // Тоді тести і програма без файла працюють з тими самими параметрами
+        [Fact]
+        public void DefaultsMatchTeamConfig()
+        {
+            TeamConfig fromFile = TeamConfig.Load(Path.Combine(DataFolder(), "team_config.json"));
+            var defaults = new TeamConfig();
+            var settings = new Settings();
+
+            Assert.Equal(fromFile.BlockSize, settings.BlockSize);
+            Assert.Equal(fromFile.MaxVolumeBytes, settings.MaxVolumeBytes);
+            Assert.Equal(fromFile.TypePriorities, settings.TypePriorities);
+            Assert.Equal(fromFile.Alpha, defaults.Alpha);
+            Assert.Equal(fromFile.TRef, defaults.TRef);
+            Assert.Equal(fromFile.F1Min, defaults.F1Min);
+            Assert.Equal(0, settings.BlockSize % settings.SplitUnit);
+        }
+
+        // Вартості ДП з team_config.json збігаються з тими, що в коді ДП-розбору
+        [Fact]
+        public void DpCostsMatchTeamConfig()
+        {
+            TeamConfig config = TeamConfig.Load(Path.Combine(DataFolder(), "team_config.json"));
+
+            Assert.Equal(Lz77.LiteralCost, config.LiteralBits);
+            Assert.Equal(Lz77.MatchCost(1), config.ReferenceBits);
+        }
+
+        // Пошкоджений team_config.json дає зрозумілу помилку, а не падіння програми
+        [Fact]
+        public void BrokenTeamConfigIsReported()
+        {
+            string path = Path.GetTempFileName();
+            try
+            {
+                File.WriteAllText(path, "{ \"команда\": \"T01\" }");
+                bool reported = false;
+                try
+                {
+                    TeamConfig.Load(path);
+                }
+                catch (InvalidOperationException)
+                {
+                    reported = true;
+                }
+                Assert.True(reported);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
         }
 
         // labels.csv без рядка з назвами колонок теж читається: ім'я - перша колонка, тип - друга

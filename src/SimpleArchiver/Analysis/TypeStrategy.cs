@@ -7,7 +7,7 @@ namespace SimpleArchiver
         public bool Compress { get; set; } = true; // чи стискати файл цього типу
         public ParserKind Parser { get; set; } = ParserKind.Lazy; // спосіб розбору LZ77
         public int MaxChain { get; set; } = 64; // глибина пошуку повторів
-        public int BlockSize { get; set; } = 65536; // розмір блока в байтах
+        public int BlockSize { get; set; } = Settings.teamBlockSize; // розмір блока в байтах
 
         // Створює стратегію з усіма параметрами
         public TypeStrategy(bool compress, ParserKind parser, int maxChain, int blockSize)
@@ -25,25 +25,25 @@ namespace SimpleArchiver
             var strategies = new TypeStrategy[FileClassifier.ClassCount];
 
             // 0 природний текст: багато коротких повторів слів, лінивий розбір і глибокий пошук знаходять довші збіги
-            strategies[0] = new TypeStrategy(true, ParserKind.Lazy, 128, 65536);
+            strategies[0] = new TypeStrategy(true, ParserKind.Lazy, 128, Settings.teamBlockSize);
 
             // 1 вихідний код: довгі повтори рядків і назв, теж глибокий пошук
-            strategies[1] = new TypeStrategy(true, ParserKind.Lazy, 128, 65536);
+            strategies[1] = new TypeStrategy(true, ParserKind.Lazy, 128, Settings.teamBlockSize);
 
             // 2 структуровані дані: повторюються назви полів і роздільники, звичайна глибина
-            strategies[2] = new TypeStrategy(true, ParserKind.Lazy, 64, 65536);
+            strategies[2] = new TypeStrategy(true, ParserKind.Lazy, 64, Settings.teamBlockSize);
 
             // 3 растр без стиснення: точних повторів мало, глибокий пошук лише витрачає час
-            strategies[3] = new TypeStrategy(true, ParserKind.Greedy, 16, 65536);
+            strategies[3] = new TypeStrategy(true, ParserKind.Greedy, 16, Settings.teamBlockSize);
 
             // 4 виконуваний файл: повтори є, але короткі, середня глибина
-            strategies[4] = new TypeStrategy(true, ParserKind.Lazy, 32, 65536);
+            strategies[4] = new TypeStrategy(true, ParserKind.Lazy, 32, Settings.teamBlockSize);
 
             // 5 вже стиснуте: повторів немає, стиснення лише витрачає час
-            strategies[5] = new TypeStrategy(false, ParserKind.Lazy, 64, 65536);
+            strategies[5] = new TypeStrategy(false, ParserKind.Lazy, 64, Settings.teamBlockSize);
 
             // 6 штучні дані (нулі, повтори): найдовший збіг знаходиться з першого кандидата
-            strategies[6] = new TypeStrategy(true, ParserKind.Greedy, 8, 65536);
+            strategies[6] = new TypeStrategy(true, ParserKind.Greedy, 8, Settings.teamBlockSize);
 
             return strategies;
         }
