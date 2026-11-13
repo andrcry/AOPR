@@ -25,6 +25,8 @@ namespace SimpleArchiver
     // team-config - показати параметри з data/team_config.json або з файла, переданого після команди
     // ga - оптимізація параметрів генетичним алгоритмом (опція --advanced додає повну хромосому і локальний пошук)
     // pareto - багатокритеріальна оптимізація за (S, T) і побудова фронту Парето (NSGA-II)
+    // q - базове Q на корпусі: опції як у pack і --log файл, потім файли або папки (без них - data/corpus)
+    // q-table - таблиця впливу кожного блока на Q: опція --model файл, потім файли або папки (без них - data/corpus)
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується.
     // На старті програма читає data/team_config.json: розмір блока, розмір тому і пріоритети типів
@@ -76,6 +78,10 @@ namespace SimpleArchiver
                     RunGa(args);
                 else if (command == "pareto")
                     RunPareto(args);
+                else if (command == "q")
+                    QualityRun.Print(args, 1);
+                else if (command == "q-table")
+                    BlockImpactTable.Print(args, 1);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -145,6 +151,11 @@ namespace SimpleArchiver
             Console.WriteLine(
                 "опції pareto: --pop N, --gen N, --seed N, --out файл, --model файл, --crossover single|uniform"
             );
+            Console.WriteLine("q опції файли_або_папки");
+            Console.WriteLine(
+                "опції q: --parser greedy|lazy|dp, --split dp, --predict, --model файл, --strategy, --log файл"
+            );
+            Console.WriteLine("q-table --model файл файли_або_папки");
             Console.WriteLine("check");
         }
 
@@ -548,7 +559,9 @@ namespace SimpleArchiver
             if (string.Equals(value, "uniform", StringComparison.OrdinalIgnoreCase))
                 return CrossoverType.Uniform;
 
-            throw new ArgumentException($"невідомий кросовер {value}, очікується single або uniform");
+            throw new ArgumentException(
+                $"невідомий кросовер {value}, очікується single або uniform"
+            );
         }
 
         static string[] ResolveCorpusPaths(string[] args, int index)

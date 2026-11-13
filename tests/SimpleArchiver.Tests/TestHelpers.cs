@@ -99,6 +99,21 @@ namespace SimpleArchiver.Tests
             throw new ArgumentException("ім'я не знайдено в навантаженні");
         }
 
+        // Папка data/ проєкту. Тести запускаються з tests/.../bin/..., тому піднімаємося вгору до SimpleArchiver.slnx
+        public static string DataFolder()
+        {
+            string? folder = AppContext.BaseDirectory;
+            while (folder != null && !File.Exists(Path.Combine(folder, "SimpleArchiver.slnx")))
+                folder = Path.GetDirectoryName(folder);
+
+            if (folder == null)
+                throw new DirectoryNotFoundException(
+                    "не знайдено папку проєкту з SimpleArchiver.slnx"
+                );
+
+            return Path.Combine(folder, "data");
+        }
+
         // Копія масиву
         public static byte[] Copy(byte[] source) => (byte[])source.Clone();
     }
