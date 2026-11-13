@@ -7,10 +7,12 @@ namespace SimpleArchiver
     public class Payload
     {
         public const int PredictionFlag = 0x01; // біт 0 - PREDICTION, наше командне розширення
+        public const int PaddingFlag = 0x02; // біт 1 - PADDING, наше командне розширення: нулі після даних блоків
 
         public int Flags { get; set; } // прапорці тому
         public List<FileRecord> Files { get; set; } = new List<FileRecord>(); // таблиця файлів цього тому
         public List<BlockRecord> Blocks { get; set; } = new List<BlockRecord>(); // блоки цього тому
+        public int PaddingLength { get; set; } // скільки нулів дописати після даних блоків (вирівнювання розміру тому)
 
         public bool UsesPrediction => (Flags & PredictionFlag) != 0; // true, якщо в томі використано прогноз байта
 
@@ -55,6 +57,9 @@ namespace SimpleArchiver
             foreach (BlockRecord block in Blocks)
                 writer.WriteBytes(block.Data);
 
+            // Нулі вирівнювання, якщо їх задано
+            writer.WriteBytes(new byte[PaddingLength]);
+
             return writer.ToArray();
         }
 
@@ -70,7 +75,7 @@ namespace SimpleArchiver
 
             if (reserved != 0)
                 throw new ArchiveException(ErrorCodes.Payload, "поле reserved не дорівнює 0");
-            if ((payload.Flags & ~PredictionFlag) != 0)
+            if ((payload.Flags & ~(PredictionFlag | PaddingFlag)) != 0)
                 throw new ArchiveException(ErrorCodes.Payload, "невідомі прапорці flags");
 
             // Таблиця файлів
@@ -150,6 +155,21 @@ namespace SimpleArchiver
 
             for (int i = 0; i < blockCount; i++)
                 payload.Blocks[i].Data = reader.ReadBytes(codedLengths[i]);
+
+            // З прапорцем PADDING після даних блоків можуть бути лише нулі вирівнювання
+            if ((payload.Flags & PaddingFlag) != 0)
+            {
+                byte[] padding = reader.ReadBytes(reader.Remaining);
+                foreach (byte b in padding)
+                {
+                    if (b != 0)
+                        throw new ArchiveException(
+                            ErrorCodes.Payload,
+                            "байти вирівнювання не нульові"
+                        );
+                }
+                payload.PaddingLength = padding.Length;
+            }
 
             if (reader.Remaining != 0)
                 throw new ArchiveException(ErrorCodes.Payload, "після даних блоків є зайві байти");

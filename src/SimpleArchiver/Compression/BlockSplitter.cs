@@ -9,6 +9,9 @@ namespace SimpleArchiver
             if (settings.BlockSize <= 0)
                 throw new ArgumentException("BlockSize повинен бути додатним");
 
+            if (data.Length == 0)
+                return EmptyFile();
+
             var blocks = new List<PreparedBlock>();
 
             for (int offset = 0; offset < data.Length; offset += settings.BlockSize)
@@ -22,6 +25,20 @@ namespace SimpleArchiver
             return blocks;
         }
 
+        // Порожній файл: один блок raw_len = 0 без стиснення, так само як в еталонному архіві ref_02_empty_file.
+        // Тоді кожен файл має хоча б один блок, і рюкзак кладе порожній файл у том, як і всі інші
+        static List<PreparedBlock> EmptyFile()
+        {
+            var block = new PreparedBlock();
+            block.RawLength = 0;
+            block.Data = new byte[0];
+            block.Flags = BlockRecord.NoCompressionFlag;
+
+            var blocks = new List<PreparedBlock>();
+            blocks.Add(block);
+            return blocks;
+        }
+
         // ДП-розбиття на блоки з власними таблицями (просунутий рівень зони Стиснення).
         // Межі блоків шукаємо з кроком SplitUnit байтів: дані ділимо на шматки, блок - це кілька шматків поспіль.
         //   F[0] = 0
@@ -31,23 +48,25 @@ namespace SimpleArchiver
         // Блок не довший за BlockSize, тому i беремо лише з останніх BlockSize / SplitUnit шматків
         public static List<PreparedBlock> SplitDp(byte[] data, Settings settings)
         {
-            // BlockSize = 0 (або від'ємний) теж ділиться на unit без остачі, але тоді maxSpan = 0,
-            // жоден стан ДП не досяжний, а зворотний хід склеїв би весь файл в один блок понад ліміт.
-            // Якщо BlockSize > 0 і ділиться на unit, то unit <= BlockSize виконується саме собою
+            // BlockSize = 0 теж ділиться на unit без остачі, але тоді maxSpan = 0, жоден стан ДП не досяжний,
+            // а зворотний хід склеїв би весь файл в один блок понад ліміт. Тому BlockSize має бути додатним
             int unit = settings.SplitUnit;
             if (unit <= 0 || settings.BlockSize <= 0 || settings.BlockSize % unit != 0)
                 throw new ArgumentException("BlockSize повинен бути додатним кратним SplitUnit");
 
+            if (data.Length == 0)
+                return EmptyFile();
+
             int pieces = (data.Length + unit - 1) / unit;
             int maxSpan = settings.BlockSize / unit;
 
-            // F[0] = 0, решта - нескінченність
+            // Крок 1. F[0] = 0, решта - нескінченність
             var best = new long[pieces + 1];
             var from = new int[pieces + 1];
             for (int j = 1; j <= pieces; j++)
                 best[j] = long.MaxValue;
 
-            // Для кожного кінця j перебрати всі можливі початки i
+            // Крок 2. Для кожного кінця j перебрати всі можливі початки i
             for (int j = 1; j <= pieces; j++)
             {
                 for (int i = Math.Max(0, j - maxSpan); i < j; i++)
@@ -62,13 +81,13 @@ namespace SimpleArchiver
                 }
             }
 
-            // Зворотний хід: від кінця до початку збираємо межі блоків
+            // Крок 3. Зворотний хід: від кінця до початку збираємо межі блоків
             var starts = new List<int>();
             for (int j = pieces; j > 0; j = from[j])
                 starts.Add(from[j]);
             starts.Reverse();
 
-            // Закодувати обрані блоки
+            // Крок 4. Закодувати обрані блоки
             var blocks = new List<PreparedBlock>();
             for (int k = 0; k < starts.Count; k++)
             {

@@ -11,3 +11,4 @@ TestResults/
 *.arc
 !data/reference/*.arc
 data/
+data/

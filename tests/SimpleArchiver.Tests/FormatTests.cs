@@ -131,8 +131,13 @@ namespace SimpleArchiver.Tests
             Assert.Equal(ErrorCodes.Payload, ErrorWhenParsingPayload(reserved));
 
             Payload unsafeName = MakePayload();
-            unsafeName.Files[0].Name = "../secret.txt";
-            Assert.Equal(ErrorCodes.Payload, ErrorWhenParsingPayload(unsafeName.ToBytes()));
+            unsafeName.Files[0].Name = "xx_secret.txt";
+            Assert.Equal(
+                ErrorCodes.Payload,
+                ErrorWhenParsingPayload(
+                    TestHelpers.WithUnsafeName(unsafeName, "xx_secret.txt", "../secret.txt")
+                )
+            );
 
             Payload wrongLength = MakePayload();
             wrongLength.Blocks[0].RawLength = 5; // без стиснення coded_len має дорівнювати raw_len

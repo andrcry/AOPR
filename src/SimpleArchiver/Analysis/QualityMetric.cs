@@ -1,3 +1,4 @@
+using System;
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -9,6 +10,7 @@ using System.Text.Json;
 
 namespace SimpleArchiver
 {
+    // Клас TeamConfig перенесено в Common/TeamConfig.cs: він читає справжній team_config.json від викладача
     // Конфігурація команди з data/team_config.json
     public class TeamConfig
     {
@@ -76,6 +78,8 @@ namespace SimpleArchiver
             Settings settings,
             TeamConfig config,
             string configurationName = "Базова система",
+            string? logFilePath = null
+        )
             string? logFilePath = null)
         {
             var result = new QEvaluation { Name = configurationName };
@@ -83,6 +87,8 @@ namespace SimpleArchiver
                 return result;
 
             long bOrig = 0;
+            foreach (var f in corpus)
+                bOrig += f.Data.Length;
             foreach (var f in corpus) bOrig += f.Data.Length;
             result.OriginalBytes = bOrig;
 
@@ -94,6 +100,8 @@ namespace SimpleArchiver
                 sw.Stop();
 
                 long bArc = 0;
+                foreach (var v in volumes)
+                    bArc += v.Length;
                 foreach (var v in volumes) bArc += v.Length;
 
                 result.ArchiveBytes = bArc;
@@ -104,6 +112,17 @@ namespace SimpleArchiver
                 result.T = config.TRef / (config.TRef + result.ElapsedSeconds);
 
                 // Якщо хоча б один файл корпусу не відновлено побайтово, Q = 0
+                result.Q = result.RestoredExact
+                    ? (config.Alpha * result.S + config.Beta * result.T)
+                    : 0.0;
+
+                if (logFilePath != null)
+                {
+                    File.AppendAllText(
+                        logFilePath,
+                        $"[{DateTime.UtcNow:O}] [OK] Mode='{configurationName}' Files={corpus.Count} "
+                            + $"B_orig={bOrig} B_arc={bArc} Time={result.ElapsedSeconds:F4}s Q={result.Q:F5} Exact={result.RestoredExact}\n"
+                    );
                 result.Q = result.RestoredExact ? (config.Alpha * result.S + config.Beta * result.T) : 0.0;
 
                 if (logFilePath != null)
@@ -121,6 +140,10 @@ namespace SimpleArchiver
 
                 if (logFilePath != null)
                 {
+                    File.AppendAllText(
+                        logFilePath,
+                        $"[{DateTime.UtcNow:O}] [HANDLED_ERROR] Mode='{configurationName}' Error='{ex.Message}'\n"
+                    );
                     File.AppendAllText(logFilePath,
                         $"[{DateTime.UtcNow:O}] [HANDLED_ERROR] Mode='{configurationName}' Error='{ex.Message}'\n");
                 }
@@ -131,6 +154,8 @@ namespace SimpleArchiver
 
         static bool CheckByteForByte(List<ArchiveFile> expected, List<ArchiveFile> actual)
         {
+            if (expected.Count != actual.Count)
+                return false;
             if (expected.Count != actual.Count) return false;
 
             var map = new Dictionary<string, byte[]>(StringComparer.Ordinal);
@@ -155,6 +180,71 @@ namespace SimpleArchiver
         }
 
         // Пункт 10: Таблиця впливу кожного блока на Q (Ablation Study)
+        public static string BuildAblationTable(
+            List<ArchiveFile> corpus,
+            TeamConfig config,
+            string logPath = "experiments/corpus_run.log"
+        )
+        {
+            string? dir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            if (File.Exists(logPath))
+                File.Delete(logPath);
+
+            var configs = new List<(string Label, Action<Settings> Apply)>
+            {
+                (
+                    "Повна система (Lazy LZ77 + ДП-блоки + Прогноз)",
+                    s =>
+                    {
+                        s.Parser = ParserKind.Lazy;
+                        s.UseDpBlockSplit = true;
+                        s.UsePrediction = true;
+                    }
+                ),
+                (
+                    "Без прогнозу байта (--predict вимкнено)",
+                    s =>
+                    {
+                        s.Parser = ParserKind.Lazy;
+                        s.UseDpBlockSplit = true;
+                        s.UsePrediction = false;
+                    }
+                ),
+                (
+                    "Без ДП-розбиття блоків (фіксовані блоки)",
+                    s =>
+                    {
+                        s.Parser = ParserKind.Lazy;
+                        s.UseDpBlockSplit = false;
+                        s.UsePrediction = false;
+                    }
+                ),
+                (
+                    "Жадібний розбір LZ77 (замість лінивого)",
+                    s =>
+                    {
+                        s.Parser = ParserKind.Greedy;
+                        s.UseDpBlockSplit = false;
+                        s.UsePrediction = false;
+                    }
+                ),
+                (
+                    "Оптимальний ДП-розбір LZ77 (повноцінне ДП)",
+                    s =>
+                    {
+                        s.Parser = ParserKind.Dp;
+                        s.UseDpBlockSplit = false;
+                        s.UsePrediction = false;
+                    }
+                ),
+            };
+
+            var sb = new StringBuilder();
+            sb.AppendLine(
+                "Конфігурація системи\tB_orig (Б)\tB_arc (Б)\tЧас t (с)\tS (Стиснення)\tT (Швидкодія)\tМетрика Q\tСтатус"
+            );
         public static string BuildAblationTable(List<ArchiveFile> corpus, TeamConfig config, string logPath = "experiments/corpus_run.log")
         {
             string? dir = Path.GetDirectoryName(logPath);
@@ -203,11 +293,26 @@ namespace SimpleArchiver
                 var settings = new Settings
                 {
                     BlockSize = config.BlockSize,
+                    MaxVolumeBytes = config.MaxVolumeBytes,
                     MaxVolumeBytes = config.MaxVolumeBytes
                 };
                 apply(settings);
 
                 QEvaluation eval = Evaluate(corpus, settings, config, label, logPath);
+                sb.AppendLine(
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "{0}\t{1}\t{2}\t{3:F4}\t{4:F4}\t{5:F4}\t{6:F4}\t{7}",
+                        eval.Name,
+                        eval.OriginalBytes,
+                        eval.ArchiveBytes,
+                        eval.ElapsedSeconds,
+                        eval.S,
+                        eval.T,
+                        eval.Q,
+                        eval.RestoredExact ? "OK (CRC32 збігся)" : "ПОМИЛКА"
+                    )
+                );
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
                     "{0}\t{1}\t{2}\t{3:F4}\t{4:F4}\t{5:F4}\t{6:F4}\t{7}",
                     eval.Name, eval.OriginalBytes, eval.ArchiveBytes,
@@ -218,4 +323,5 @@ namespace SimpleArchiver
             return sb.ToString();
         }
     }
+}
 }

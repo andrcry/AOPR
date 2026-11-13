@@ -25,18 +25,18 @@ namespace SimpleArchiver.Tests
         {
             var settings = new Settings();
             settings.MaxVolumeBytes = 5000;
-            var strategy = new TypeStrategy(true, ParserKind.Greedy, 8, 32768);
+            var strategy = new TypeStrategy(true, ParserKind.Greedy, 8, 8192);
 
             Settings fileSettings = strategy.ApplyTo(settings);
 
             Assert.Equal(ParserKind.Greedy, fileSettings.Parser);
             Assert.Equal(8, fileSettings.MaxChain);
-            Assert.Equal(32768, fileSettings.BlockSize);
+            Assert.Equal(8192, fileSettings.BlockSize);
             Assert.Equal(5000, fileSettings.MaxVolumeBytes);
 
             Assert.Equal(ParserKind.Lazy, settings.Parser);
             Assert.Equal(64, settings.MaxChain);
-            Assert.Equal(65536, settings.BlockSize);
+            Assert.Equal(16384, settings.BlockSize); // block_size з team_config.json
         }
 
         // Архіватор бере розбір за типом файла, записує його в поле strategy, і файли відновлюються

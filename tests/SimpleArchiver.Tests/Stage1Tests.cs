@@ -547,15 +547,38 @@ namespace SimpleArchiver.Tests
         public void PayloadUnsafeNameIsRejected()
         {
             var file = new FileRecord();
-            file.Name = "../secret.txt";
+            file.Name = "xx_secret.txt";
             var payload = new Payload();
             payload.Files.Add(file);
 
-            byte[] volume = TestHelpers.SealPayload(payload.ToBytes());
+            byte[] volume = TestHelpers.SealPayload(
+                TestHelpers.WithUnsafeName(payload, "xx_secret.txt", "../secret.txt")
+            );
             Assert.Equal(
                 ErrorCodes.Payload,
                 TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
             );
+        }
+
+        // Небезпечне ім'я не записується в архів: Payload.ToBytes дає помилку
+        [Fact]
+        public void PayloadWriterRefusesUnsafeName()
+        {
+            var file = new FileRecord();
+            file.Name = "../secret.txt";
+            var payload = new Payload();
+            payload.Files.Add(file);
+
+            bool refused = false;
+            try
+            {
+                payload.ToBytes();
+            }
+            catch (ArgumentException)
+            {
+                refused = true;
+            }
+            Assert.True(refused);
         }
 
         // Ненульове поле reserved відхиляється

@@ -67,6 +67,38 @@ namespace SimpleArchiver.Tests
             return Volume.Seal(0, 1, salt, nonce, payload, Keys.Derive(Password, salt));
         }
 
+        // Записує навантаження з безпечним ім'ям і потім підміняє його в байтах на небезпечне такої ж довжини.
+        // Payload.ToBytes сам не запише небезпечне ім'я, а перевірити читача треба
+        public static byte[] WithUnsafeName(Payload payload, string safeName, string unsafeName)
+        {
+            byte[] safe = Encoding.UTF8.GetBytes(safeName);
+            byte[] bad = Encoding.UTF8.GetBytes(unsafeName);
+            if (safe.Length != bad.Length)
+                throw new ArgumentException("імена мають бути однакової довжини");
+
+            byte[] bytes = payload.ToBytes();
+            for (int i = 0; i + safe.Length <= bytes.Length; i++)
+            {
+                bool same = true;
+                for (int j = 0; j < safe.Length; j++)
+                {
+                    if (bytes[i + j] != safe[j])
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+
+                if (same)
+                {
+                    Array.Copy(bad, 0, bytes, i, bad.Length);
+                    return bytes;
+                }
+            }
+
+            throw new ArgumentException("ім'я не знайдено в навантаженні");
+        }
+
         // Копія масиву
         public static byte[] Copy(byte[] source) => (byte[])source.Clone();
     }
