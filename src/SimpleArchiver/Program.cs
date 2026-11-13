@@ -23,6 +23,7 @@ namespace SimpleArchiver
     // demo-data - створити замінник файлів викладача для демонстрації: опція --seed число, потім папка
     // ref-check - перевірити еталонні і зіпсовані архіви: папка reference
     // team-config - показати параметри з data/team_config.json або з файла, переданого після команди
+    // ga - оптимізація параметрів генетичним алгоритмом та порівняння з випадковим пошуком
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується.
     // На старті програма читає data/team_config.json: розмір блока, розмір тому і пріоритети типів
@@ -70,6 +71,8 @@ namespace SimpleArchiver
                     return ReferenceCheck.Print(args[1]) ? 0 : 1;
                 else if (command == "team-config" && args.Length <= 2)
                     PrintTeamConfig(args);
+                else if (command == "ga")
+                    RunGa(args);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -131,6 +134,8 @@ namespace SimpleArchiver
             Console.WriteLine("опції demo-data: --seed число");
             Console.WriteLine("ref-check папка_reference");
             Console.WriteLine("team-config або team-config файл");
+            Console.WriteLine("ga [опції] [файли_або_папки]");
+            Console.WriteLine("опції ga: --pop N, --gen N, --seed N, --out файл, --model файл");
             Console.WriteLine("check");
         }
 
@@ -369,6 +374,71 @@ namespace SimpleArchiver
                     $"{Path.GetFileName(path)}: тип {type}, {FileClassifier.classNames[type]}, {strategies[type].Describe()}"
                 );
             }
+        }
+
+        // Оптимізує параметри архіватора генетичним алгоритмом і порівнює з випадковим пошуком
+        static void RunGa(string[] args)
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(TeamConfig.DefaultPath);
+            var options = new GaRunOptions { Seed = config.Seed };
+            int index = 1;
+
+            while (index < args.Length && args[index].StartsWith("--"))
+            {
+                string option = args[index];
+                if (index + 1 >= args.Length)
+                    throw new ArgumentException($"після {option} потрібне значення");
+
+                string value = args[index + 1];
+                index += 2;
+
+                if (option == "--pop")
+                    options.PopulationSize = ParsePositive(value, option);
+                else if (option == "--gen")
+                    options.Generations = ParsePositive(value, option);
+                else if (option == "--seed")
+                {
+                    if (!int.TryParse(value, out int seed))
+                        throw new ArgumentException($"після {option} потрібне ціле число");
+                    options.Seed = seed;
+                }
+                else if (option == "--out")
+                    options.LogPath = value;
+                else if (option == "--model")
+                    options.ClassifierPath = value;
+                else
+                    throw new ArgumentException($"невідома опція {option}");
+            }
+
+            string[] inputPaths =
+                index < args.Length
+                    ? args[index..]
+                    : (
+                        Directory.Exists("data/corpus")
+                            ? new[] { "data/corpus" }
+                            : throw new ArgumentException("потрібен хоча б один файл або папка корпусу")
+                    );
+
+            List<ArchiveFile> corpus = GeneticOptimizer.LoadCorpus(inputPaths);
+            long totalBytes = 0;
+            foreach (ArchiveFile f in corpus)
+                totalBytes += f.Data.Length;
+
+            Console.WriteLine($"Корпус: {corpus.Count} файлів, {totalBytes} байтів (labels.csv виключено)");
+
+            GaComparisonReport report = GeneticOptimizer.CompareWithRandomSearch(corpus, config, options);
+
+            Console.WriteLine("Покоління ГА:");
+            foreach (GaGenerationRecord row in report.Genetic.History)
+            {
+                Console.WriteLine(
+                    $"  gen={row.Generation} evals={row.Evaluations} best_Q={row.BestQ:F4} avg_Q={row.AverageQ:F4} S={row.BestS:F4} T={row.BestT:F4} [{row.BestParams}]"
+                );
+            }
+
+            Console.WriteLine();
+            Console.Write(report.TableText);
+            Console.WriteLine($"Журнал поколінь збережено у {report.GenerationsLogPath}");
         }
     }
 }
