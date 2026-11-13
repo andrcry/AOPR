@@ -36,5 +36,18 @@ namespace SimpleArchiver.Tests
             // Шифротекст не стискається: архів не менший за самі дані
             Assert.True(encryptFirst >= text.Length);
         }
+
+        // Рядки з табуляцією стають таблицею Markdown, рядок без табуляції - звичайним текстом
+        [Fact]
+        public void ReportTurnsTabbedLinesIntoMarkdownTable()
+        {
+            var md = new System.Text.StringBuilder();
+            ReportGenerator.AppendTables(md, new List<string> { "Заголовок", "a\tb", "1\t2|3", "", "Кінець" });
+            string text = md.ToString().Replace("\r", "");
+
+            Assert.Contains("Заголовок\n", text);
+            Assert.Contains("| a | b |\n|---|---|\n| 1 | 2\\|3 |\n", text);
+            Assert.Contains("Кінець", text);
+        }
     }
 }

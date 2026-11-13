@@ -27,6 +27,7 @@ namespace SimpleArchiver
     // pareto - багатокритеріальна оптимізація за (S, T) і побудова фронту Парето (NSGA-II)
     // q - базове Q на корпусі: опції як у pack і --log файл, потім файли або папки (без них - data/corpus)
     // crypto-order - експеримент: стиснути -> зашифрувати проти зашифрувати -> стиснути
+    // report - автоматичний вимір Q і всі таблиці звіту у experiments/FULL_REPORT_TABLES.md: опції --quick, --ga-pop, --ga-gen
     // q-table - таблиця впливу кожного блока на Q: опція --model файл, потім файли або папки (без них - data/corpus)
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується.
@@ -85,6 +86,8 @@ namespace SimpleArchiver
                     BlockImpactTable.Print(args, 1);
                 else if (command == "crypto-order")
                     CryptoOrderTable.Print(args.Length >= 2 ? args : new[] { "crypto-order", "data/corpus" }, 1);
+                else if (command == "report")
+                    ReportGenerator.Run(args);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -160,6 +163,7 @@ namespace SimpleArchiver
             );
             Console.WriteLine("q-table --model файл файли_або_папки");
             Console.WriteLine("crypto-order [файли_або_папки]");
+            Console.WriteLine("report [--quick] [--ga-pop N] [--ga-gen N] [папка_корпусу]");
             Console.WriteLine("check");
         }
 
