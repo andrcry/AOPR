@@ -81,6 +81,10 @@ namespace SimpleArchiver
                     compress = strategy.Compress;
                 }
 
+                // Стиснення можна вимкнути повністю: так таблиця впливу блоків міряє, що дають LZ77 і Гаффман
+                if (!settings.UseCompression)
+                    compress = false;
+
                 var record = new FileRecord();
                 record.Name = files[fileNumber].Name;
                 record.OriginalSize = data.Length;
@@ -106,7 +110,7 @@ namespace SimpleArchiver
             // Крок 4. Розкласти блоки по томах (рюкзак)
             List<Payload> payloads = VolumePacker.Pack(records, blocks, settings);
 
-            //Вирівняти розмір кожного тому, якщо це увімкнено
+            // Крок 5. Вирівняти розмір кожного тому, якщо це увімкнено
             if (VolumePadding.IsEnabled(settings))
                 AddPadding(payloads, settings);
 
@@ -193,18 +197,22 @@ namespace SimpleArchiver
         }
 
         // Перевіряє, що імена безпечні, не повторюються і не задовгі
+        // Повтор шукаємо без урахування регістру: у Windows A.txt і a.txt - той самий файл,
+        // тому такий архів там не розпакувався б повністю
         static void CheckFiles(List<ArchiveFile> files)
         {
-            var names = new List<string>();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (ArchiveFile file in files)
             {
                 if (!SafeNames.IsSafe(file.Name))
                     throw new ArgumentException($"недопустиме ім'я файла: {file.Name}");
-                if (names.Contains(file.Name))
-                    throw new ArgumentException($"два файли з однаковим ім'ям: {file.Name}");
                 if (Encoding.UTF8.GetByteCount(file.Name) > 65535)
                     throw new ArgumentException("ім'я файла задовге");
+                if (names.Contains(file.Name))
+                    throw new ArgumentException(
+                        $"два файли з однаковим ім'ям (без урахування регістру): {file.Name}"
+                    );
 
                 names.Add(file.Name);
             }

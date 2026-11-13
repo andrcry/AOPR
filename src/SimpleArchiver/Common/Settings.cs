@@ -14,6 +14,9 @@ namespace SimpleArchiver
         public bool UseDpBlockSplit { get; set; } = false; // true - ДП-розбиття на блоки (просунутий рівень)
         public int SplitUnit { get; set; } = 2048; // крок, з яким ДП шукає межі блоків, BlockSize має ділитися на нього
 
+        // Стиснення
+        public bool UseCompression { get; set; } = true; // false - усі блоки без стиснення (для таблиці впливу блоків на Q)
+
         // LZ77
         public ParserKind Parser { get; set; } = ParserKind.Lazy;
         public int MaxChain { get; set; } = 64; // скільки кандидатів перевіряти при пошуку збігу
