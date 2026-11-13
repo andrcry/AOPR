@@ -1,0 +1,7 @@
+generation	evaluations	best_q	avg_q	best_s	best_t	best_archive_bytes	best_time_s	mutation_rate	best_params
+0	8	0.809424	0.793283	0.734680	0.983827	119140	0.4932	0.4500	Parser=Dp, MaxChain=64, BlockSize=32768, SplitUnit=2048, DpSplit=off, Predict=on, Strategy=off
+1	15	0.809424	0.790965	0.734680	0.983827	119140	0.4932	0.4500	Parser=Dp, MaxChain=64, BlockSize=32768, SplitUnit=2048, DpSplit=off, Predict=on, Strategy=off
+2	22	0.809424	0.800901	0.734680	0.983827	119140	0.4932	0.3575	Parser=Dp, MaxChain=64, BlockSize=32768, SplitUnit=2048, DpSplit=off, Predict=on, Strategy=off
+3	29	0.809424	0.798302	0.734680	0.983827	119140	0.4932	0.2650	Parser=Dp, MaxChain=64, BlockSize=32768, SplitUnit=2048, DpSplit=off, Predict=on, Strategy=off
+4	36	0.809424	0.795888	0.734680	0.983827	119140	0.4932	0.1725	Parser=Dp, MaxChain=64, BlockSize=32768, SplitUnit=2048, DpSplit=off, Predict=on, Strategy=off
+5	43	0.809424	0.799485	0.734680	0.983827	119140	0.4932	0.0800	Parser=Dp, MaxChain=64, BlockSize=32768, SplitUnit=2048, DpSplit=off, Predict=on, Strategy=off
