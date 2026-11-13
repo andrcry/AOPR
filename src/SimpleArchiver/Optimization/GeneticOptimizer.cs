@@ -4,12 +4,27 @@ using System.Text;
 
 namespace SimpleArchiver
 {
-    // Хромосома для оптимізації параметрів архіватора (базовий рівень: 3 гени)
+    // Спосіб кросоверу для генетичного алгоритму
+    public enum CrossoverType
+    {
+        SinglePoint,
+        Uniform,
+    }
+
+    // Хромосома для оптимізації параметрів архіватора:
+    // базові 3 гени (MaxChain, BlockSize, SplitUnit) + розширення (Parser, UseDpBlockSplit, UsePrediction, UseTypeStrategy)
     public class GaChromosome
     {
+        // Базові гени
         public int MaxChain { get; set; } = 64;
         public int BlockSize { get; set; } = Settings.teamBlockSize;
         public int SplitUnit { get; set; } = 2048;
+
+        // Просунуті гени повної хромосоми
+        public ParserKind Parser { get; set; } = ParserKind.Lazy;
+        public bool UseDpBlockSplit { get; set; } = false;
+        public bool UsePrediction { get; set; } = false;
+        public bool UseTypeStrategy { get; set; } = false;
 
         public GaChromosome Clone() =>
             new GaChromosome
@@ -17,26 +32,55 @@ namespace SimpleArchiver
                 MaxChain = MaxChain,
                 BlockSize = BlockSize,
                 SplitUnit = SplitUnit,
+                Parser = Parser,
+                UseDpBlockSplit = UseDpBlockSplit,
+                UsePrediction = UsePrediction,
+                UseTypeStrategy = UseTypeStrategy,
             };
 
         // Перетворює хромосому на налаштування архіватора з урахуванням team_config.json
         public Settings ToSettings(TeamConfig config, string? classifierPath = null)
         {
+            TypeStrategy[] strategies = TypeStrategy.Defaults();
+            foreach (TypeStrategy strategy in strategies)
+            {
+                strategy.BlockSize = Math.Min(strategy.BlockSize, BlockSize);
+                if (strategy.BlockSize <= 0 || strategy.BlockSize % SplitUnit != 0)
+                    strategy.BlockSize = BlockSize;
+            }
+
             return new Settings
             {
                 MaxChain = MaxChain,
                 BlockSize = BlockSize,
                 SplitUnit = SplitUnit,
+                Parser = Parser,
+                UseDpBlockSplit = UseDpBlockSplit,
+                UsePrediction = UsePrediction,
+                UseTypeStrategy = UseTypeStrategy,
+                TypeStrategies = strategies,
                 MaxVolumeBytes = config.MaxVolumeBytes,
                 TypePriorities = (int[])config.TypePriorities.Clone(),
                 ClassifierPath = classifierPath,
             };
         }
 
-        public string GetSignature() => $"{MaxChain}|{BlockSize}|{SplitUnit}";
+        public string GetSignature(bool full = true)
+        {
+            if (!full)
+                return $"{MaxChain}|{BlockSize}|{SplitUnit}";
 
-        public string Describe() =>
-            $"MaxChain={MaxChain}, BlockSize={BlockSize}, SplitUnit={SplitUnit}";
+            return $"{MaxChain}|{BlockSize}|{SplitUnit}|{(int)Parser}|{(UseDpBlockSplit ? 1 : 0)}|{(UsePrediction ? 1 : 0)}|{(UseTypeStrategy ? 1 : 0)}";
+        }
+
+        public string Describe(bool full = false)
+        {
+            if (!full && Parser == ParserKind.Lazy && !UseDpBlockSplit && !UsePrediction && !UseTypeStrategy)
+                return $"MaxChain={MaxChain}, BlockSize={BlockSize}, SplitUnit={SplitUnit}";
+
+            return $"Parser={Parser}, MaxChain={MaxChain}, BlockSize={BlockSize}, SplitUnit={SplitUnit}, "
+                + $"DpSplit={(UseDpBlockSplit ? "on" : "off")}, Predict={(UsePrediction ? "on" : "off")}, Strategy={(UseTypeStrategy ? "on" : "off")}";
+        }
     }
 
     // Оцінена особина популяції
@@ -64,6 +108,7 @@ namespace SimpleArchiver
         public double BestT { get; set; }
         public long BestArchiveBytes { get; set; }
         public double BestElapsedSeconds { get; set; }
+        public double MutationRate { get; set; }
         public string BestParams { get; set; } = "";
     }
 
@@ -75,13 +120,18 @@ namespace SimpleArchiver
         public int TournamentSize { get; set; } = 3;
         public double CrossoverRate { get; set; } = 0.85;
         public double MutationRate { get; set; } = 0.25;
+        public bool AdaptiveMutation { get; set; } = false;
+        public double InitialMutationRate { get; set; } = 0.45;
+        public double FinalMutationRate { get; set; } = 0.08;
+        public CrossoverType Crossover { get; set; } = CrossoverType.SinglePoint;
+        public bool Advanced { get; set; } = false;
         public int ElitismCount { get; set; } = 1;
         public int Seed { get; set; } = 2001;
         public string LogPath { get; set; } = "experiments/ga_generations.tsv";
         public string? ClassifierPath { get; set; }
     }
 
-    // Результат одного методу оптимізації (ГА або випадкового пошуку)
+    // Результат одного методу оптимізації (ГА, випадкового або локального пошуку)
     public class OptimizationResult
     {
         public string AlgorithmName { get; set; } = "";
@@ -92,21 +142,28 @@ namespace SimpleArchiver
         public List<GaIndividual> Evaluated { get; set; } = new();
     }
 
-    // Звіт порівняння ГА та випадкового пошуку за однакового бюджету Q
+    // Звіт порівняння ГА, випадкового пошуку та локального пошуку за однакового бюджету Q
     public class GaComparisonReport
     {
         public OptimizationResult Genetic { get; set; } = null!;
         public OptimizationResult RandomSearch { get; set; } = null!;
+        public OptimizationResult? LocalSearch { get; set; }
         public string TableText { get; set; } = "";
         public string GenerationsLogPath { get; set; } = "";
     }
 
-    // Блок оптимізації параметрів архіватора (п. 3.6, п. 11.4, п. 12)
+    // Блок оптимізації параметрів архіватора (базовий та просунутий рівні)
     public static class GeneticOptimizer
     {
         public static readonly int[] MaxChainCandidates = { 4, 8, 16, 32, 64, 128, 256 };
         public static readonly int[] BaseBlockSizeCandidates = { 2048, 4096, 8192, 16384, 32768, 65536 };
         public static readonly int[] SplitUnitCandidates = { 512, 1024, 2048, 4096 };
+        public static readonly ParserKind[] ParserCandidates =
+        {
+            ParserKind.Greedy,
+            ParserKind.Lazy,
+            ParserKind.Dp,
+        };
 
         // Завантажує корпус із файлів/папок, обов'язково виключаючи labels.csv
         public static List<ArchiveFile> LoadCorpus(string[] paths)
@@ -158,7 +215,7 @@ namespace SimpleArchiver
             return valid.ToArray();
         }
 
-        // Виправляє гени хромосоми так, щоб BlockSize вміщувався в том і ділився на SplitUnit
+        // Виправляє гени хромосоми так, щоб BlockSize вміщувався в том, ділився на SplitUnit і ДП-розбиття мало обмежене розгалуження
         public static GaChromosome Repair(GaChromosome chromosome, int[] validBlockSizes)
         {
             GaChromosome repaired = chromosome.Clone();
@@ -169,16 +226,38 @@ namespace SimpleArchiver
             if (!Array.Exists(validBlockSizes, s => s == repaired.BlockSize))
                 repaired.BlockSize = NearestCandidate(repaired.BlockSize, validBlockSizes);
 
-            if (repaired.SplitUnit <= 0 || repaired.BlockSize % repaired.SplitUnit != 0)
+            int minUnitForDp = repaired.UseDpBlockSplit ? Math.Max(512, repaired.BlockSize / 8) : 1;
+            if (
+                repaired.SplitUnit <= 0
+                || repaired.BlockSize % repaired.SplitUnit != 0
+                || repaired.SplitUnit < minUnitForDp
+            )
             {
                 int chosenUnit = 0;
                 for (int i = SplitUnitCandidates.Length - 1; i >= 0; i--)
                 {
                     int candidate = SplitUnitCandidates[i];
-                    if (candidate <= repaired.BlockSize && repaired.BlockSize % candidate == 0)
+                    if (
+                        candidate <= repaired.BlockSize
+                        && repaired.BlockSize % candidate == 0
+                        && candidate >= minUnitForDp
+                    )
                     {
                         chosenUnit = candidate;
                         break;
+                    }
+                }
+
+                if (chosenUnit == 0)
+                {
+                    for (int i = SplitUnitCandidates.Length - 1; i >= 0; i--)
+                    {
+                        int candidate = SplitUnitCandidates[i];
+                        if (candidate <= repaired.BlockSize && repaired.BlockSize % candidate == 0)
+                        {
+                            chosenUnit = candidate;
+                            break;
+                        }
                     }
                 }
 
@@ -206,8 +285,12 @@ namespace SimpleArchiver
             return best;
         }
 
-        // Генерує випадкову допустиму хромосому
-        public static GaChromosome RandomChromosome(Random rnd, int[] validBlockSizes)
+        // Генерує випадкову допустиму хромосому (базову 3-генну або повну 7-генну)
+        public static GaChromosome RandomChromosome(
+            Random rnd,
+            int[] validBlockSizes,
+            bool fullChromosome = false
+        )
         {
             var chromosome = new GaChromosome
             {
@@ -215,6 +298,15 @@ namespace SimpleArchiver
                 BlockSize = validBlockSizes[rnd.Next(validBlockSizes.Length)],
                 SplitUnit = SplitUnitCandidates[rnd.Next(SplitUnitCandidates.Length)],
             };
+
+            if (fullChromosome)
+            {
+                chromosome.Parser = ParserCandidates[rnd.Next(ParserCandidates.Length)];
+                chromosome.UseDpBlockSplit = rnd.Next(2) == 1;
+                chromosome.UsePrediction = rnd.Next(2) == 1;
+                chromosome.UseTypeStrategy = rnd.Next(2) == 1;
+            }
+
             return Repair(chromosome, validBlockSizes);
         }
 
@@ -241,21 +333,64 @@ namespace SimpleArchiver
             return best;
         }
 
-        // Одноточковий кросовер для 3-генної хромосоми
+        // Одноточковий кросовер (підтримує 3-генну та повну 7-генну хромосоми)
         public static GaChromosome CrossoverSinglePoint(
             GaChromosome parent1,
             GaChromosome parent2,
             Random rnd,
-            int[] validBlockSizes
+            int[] validBlockSizes,
+            bool fullChromosome = false
         )
         {
-            int cut = rnd.Next(1, 3);
+            int geneCount = fullChromosome ? 7 : 3;
+            int cut = rnd.Next(1, geneCount);
+
             var child = new GaChromosome
             {
                 MaxChain = parent1.MaxChain,
                 BlockSize = cut <= 1 ? parent2.BlockSize : parent1.BlockSize,
                 SplitUnit = cut <= 2 ? parent2.SplitUnit : parent1.SplitUnit,
+                Parser =
+                    fullChromosome && cut <= 3 ? parent2.Parser : parent1.Parser,
+                UseDpBlockSplit =
+                    fullChromosome && cut <= 4 ? parent2.UseDpBlockSplit : parent1.UseDpBlockSplit,
+                UsePrediction =
+                    fullChromosome && cut <= 5 ? parent2.UsePrediction : parent1.UsePrediction,
+                UseTypeStrategy =
+                    fullChromosome && cut <= 6 ? parent2.UseTypeStrategy : parent1.UseTypeStrategy,
             };
+
+            return Repair(child, validBlockSizes);
+        }
+
+        // Другий тип кросоверу: рівномірний кросовер (Uniform) для незалежного обміну генами
+        public static GaChromosome CrossoverUniform(
+            GaChromosome parent1,
+            GaChromosome parent2,
+            Random rnd,
+            int[] validBlockSizes,
+            bool fullChromosome = false
+        )
+        {
+            var child = new GaChromosome
+            {
+                MaxChain = rnd.Next(2) == 0 ? parent1.MaxChain : parent2.MaxChain,
+                BlockSize = rnd.Next(2) == 0 ? parent1.BlockSize : parent2.BlockSize,
+                SplitUnit = rnd.Next(2) == 0 ? parent1.SplitUnit : parent2.SplitUnit,
+                Parser = fullChromosome
+                    ? (rnd.Next(2) == 0 ? parent1.Parser : parent2.Parser)
+                    : parent1.Parser,
+                UseDpBlockSplit = fullChromosome
+                    ? (rnd.Next(2) == 0 ? parent1.UseDpBlockSplit : parent2.UseDpBlockSplit)
+                    : parent1.UseDpBlockSplit,
+                UsePrediction = fullChromosome
+                    ? (rnd.Next(2) == 0 ? parent1.UsePrediction : parent2.UsePrediction)
+                    : parent1.UsePrediction,
+                UseTypeStrategy = fullChromosome
+                    ? (rnd.Next(2) == 0 ? parent1.UseTypeStrategy : parent2.UseTypeStrategy)
+                    : parent1.UseTypeStrategy,
+            };
+
             return Repair(child, validBlockSizes);
         }
 
@@ -264,7 +399,8 @@ namespace SimpleArchiver
             GaChromosome chromosome,
             double mutationRate,
             Random rnd,
-            int[] validBlockSizes
+            int[] validBlockSizes,
+            bool fullChromosome = false
         )
         {
             GaChromosome mutated = chromosome.Clone();
@@ -278,16 +414,47 @@ namespace SimpleArchiver
             if (rnd.NextDouble() < mutationRate)
                 mutated.SplitUnit = PickOther(mutated.SplitUnit, SplitUnitCandidates, rnd);
 
+            if (fullChromosome)
+            {
+                if (rnd.NextDouble() < mutationRate)
+                    mutated.Parser = PickOther(mutated.Parser, ParserCandidates, rnd);
+
+                if (rnd.NextDouble() < mutationRate)
+                    mutated.UseDpBlockSplit = !mutated.UseDpBlockSplit;
+
+                if (rnd.NextDouble() < mutationRate)
+                    mutated.UsePrediction = !mutated.UsePrediction;
+
+                if (rnd.NextDouble() < mutationRate)
+                    mutated.UseTypeStrategy = !mutated.UseTypeStrategy;
+            }
+
             return Repair(mutated, validBlockSizes);
         }
 
-        static int PickOther(int current, int[] candidates, Random rnd)
+        // Адаптивна ймовірність мутації: вища на перших поколіннях і поступово спадає до останнього
+        public static double ComputeMutationRate(int generation, GaRunOptions options)
+        {
+            if (!options.AdaptiveMutation)
+                return options.MutationRate;
+
+            if (generation <= 0)
+                return options.InitialMutationRate;
+
+            if (options.Generations <= 1)
+                return options.FinalMutationRate;
+
+            double progress = Math.Clamp((double)(generation - 1) / (options.Generations - 1), 0.0, 1.0);
+            return options.InitialMutationRate - (options.InitialMutationRate - options.FinalMutationRate) * progress;
+        }
+
+        static T PickOther<T>(T current, T[] candidates, Random rnd) where T : notnull
         {
             if (candidates.Length <= 1)
                 return candidates.Length == 1 ? candidates[0] : current;
 
-            int next = candidates[rnd.Next(candidates.Length)];
-            if (next == current)
+            T next = candidates[rnd.Next(candidates.Length)];
+            if (EqualityComparer<T>.Default.Equals(next, current))
             {
                 int idx = Array.IndexOf(candidates, current);
                 next = candidates[(Math.Max(0, idx) + 1) % candidates.Length];
@@ -310,7 +477,7 @@ namespace SimpleArchiver
             return b.Evaluation.T.CompareTo(a.Evaluation.T);
         }
 
-        static GaIndividual EvaluateChromosome(
+        internal static GaIndividual EvaluateChromosome(
             List<ArchiveFile> corpus,
             GaChromosome chromosome,
             TeamConfig config,
@@ -323,7 +490,7 @@ namespace SimpleArchiver
             return new GaIndividual(chromosome.Clone(), eval);
         }
 
-        // Базовий генетичний алгоритм: турнірна селекція, одноточковий кросовер, мутація та строгий елітизм
+        // Базовий генетичний алгоритм (3 гени, одноточковий кросовер, фіксована мутація, строгий елітизм)
         public static OptimizationResult RunBasicGa(
             List<ArchiveFile> corpus,
             TeamConfig config,
@@ -331,20 +498,83 @@ namespace SimpleArchiver
         )
         {
             options ??= new GaRunOptions { Seed = config.Seed };
+            var basicOptions = new GaRunOptions
+            {
+                PopulationSize = options.PopulationSize,
+                Generations = options.Generations,
+                TournamentSize = options.TournamentSize,
+                CrossoverRate = options.CrossoverRate,
+                MutationRate = options.MutationRate,
+                AdaptiveMutation = false,
+                Crossover = CrossoverType.SinglePoint,
+                Advanced = false,
+                ElitismCount = options.ElitismCount,
+                Seed = options.Seed,
+                LogPath = options.LogPath,
+                ClassifierPath = options.ClassifierPath,
+            };
+            return RunGa(corpus, config, basicOptions);
+        }
+
+        // Просунутий генетичний алгоритм (повна 7-генна хромосома, Uniform або SinglePoint кросовер, адаптивна мутація, елітизм)
+        public static OptimizationResult RunAdvancedGa(
+            List<ArchiveFile> corpus,
+            TeamConfig config,
+            GaRunOptions? options = null
+        )
+        {
+            options ??= new GaRunOptions
+            {
+                Seed = config.Seed,
+                Advanced = true,
+                AdaptiveMutation = true,
+                Crossover = CrossoverType.Uniform,
+            };
+
+            var advOptions = new GaRunOptions
+            {
+                PopulationSize = options.PopulationSize,
+                Generations = options.Generations,
+                TournamentSize = options.TournamentSize,
+                CrossoverRate = options.CrossoverRate,
+                MutationRate = options.MutationRate,
+                AdaptiveMutation = true,
+                InitialMutationRate = options.InitialMutationRate,
+                FinalMutationRate = options.FinalMutationRate,
+                Crossover = options.Crossover,
+                Advanced = true,
+                ElitismCount = options.ElitismCount,
+                Seed = options.Seed,
+                LogPath = options.LogPath,
+                ClassifierPath = options.ClassifierPath,
+            };
+            return RunGa(corpus, config, advOptions);
+        }
+
+        // Загальний цикл генетичного алгоритму (підтримує базовий та просунутий режими)
+        public static OptimizationResult RunGa(
+            List<ArchiveFile> corpus,
+            TeamConfig config,
+            GaRunOptions options
+        )
+        {
             ValidateOptions(options);
 
             int[] validBlockSizes = ValidBlockSizes(config, corpus);
             var rnd = new Random(options.Seed);
             var totalSw = Stopwatch.StartNew();
 
-            var result = new OptimizationResult { AlgorithmName = "Генетичний алгоритм (базовий)" };
+            string name = options.Advanced
+                ? $"Генетичний алгоритм (просунутий, {options.Crossover})"
+                : "Генетичний алгоритм (базовий)";
+            var result = new OptimizationResult { AlgorithmName = name };
             int evaluations = 0;
 
             // Покоління 0
             var population = new List<GaIndividual>(options.PopulationSize);
             for (int i = 0; i < options.PopulationSize; i++)
             {
-                GaChromosome chromosome = RandomChromosome(rnd, validBlockSizes);
+                GaChromosome chromosome = RandomChromosome(rnd, validBlockSizes, options.Advanced);
                 GaIndividual ind = EvaluateChromosome(
                     corpus,
                     chromosome,
@@ -358,16 +588,25 @@ namespace SimpleArchiver
             }
 
             population.Sort(CompareIndividuals);
-            result.History.Add(BuildGenerationRecord(0, evaluations, population));
+            result.History.Add(
+                BuildGenerationRecord(
+                    0,
+                    evaluations,
+                    ComputeMutationRate(0, options),
+                    population,
+                    options.Advanced
+                )
+            );
 
             int eliteCount = Math.Clamp(options.ElitismCount, 1, options.PopulationSize - 1);
 
             // Еволюція поколінь 1 .. Generations
             for (int gen = 1; gen <= options.Generations; gen++)
             {
+                double mutationRate = ComputeMutationRate(gen, options);
                 var nextPopulation = new List<GaIndividual>(options.PopulationSize);
 
-                // Строгий елітизм: найкращі особини гарантовано переходять без переобчислення (щоб Q не коливався)
+                // Строгий елітизм: найкращі особини гарантовано переходять без переобчислення
                 for (int e = 0; e < eliteCount; e++)
                     nextPopulation.Add(population[e]);
 
@@ -376,12 +615,32 @@ namespace SimpleArchiver
                     GaIndividual parent1 = SelectTournament(population, options.TournamentSize, rnd);
                     GaIndividual parent2 = SelectTournament(population, options.TournamentSize, rnd);
 
-                    GaChromosome child =
-                        rnd.NextDouble() < options.CrossoverRate
-                            ? CrossoverSinglePoint(parent1.Chromosome, parent2.Chromosome, rnd, validBlockSizes)
-                            : parent1.Chromosome.Clone();
+                    GaChromosome child;
+                    if (rnd.NextDouble() < options.CrossoverRate)
+                    {
+                        child =
+                            options.Crossover == CrossoverType.Uniform
+                                ? CrossoverUniform(
+                                    parent1.Chromosome,
+                                    parent2.Chromosome,
+                                    rnd,
+                                    validBlockSizes,
+                                    options.Advanced
+                                )
+                                : CrossoverSinglePoint(
+                                    parent1.Chromosome,
+                                    parent2.Chromosome,
+                                    rnd,
+                                    validBlockSizes,
+                                    options.Advanced
+                                );
+                    }
+                    else
+                    {
+                        child = parent1.Chromosome.Clone();
+                    }
 
-                    child = Mutate(child, options.MutationRate, rnd, validBlockSizes);
+                    child = Mutate(child, mutationRate, rnd, validBlockSizes, options.Advanced);
 
                     GaIndividual evaluated = EvaluateChromosome(
                         corpus,
@@ -397,7 +656,9 @@ namespace SimpleArchiver
 
                 nextPopulation.Sort(CompareIndividuals);
                 population = nextPopulation;
-                result.History.Add(BuildGenerationRecord(gen, evaluations, population));
+                result.History.Add(
+                    BuildGenerationRecord(gen, evaluations, mutationRate, population, options.Advanced)
+                );
             }
 
             totalSw.Stop();
@@ -414,7 +675,8 @@ namespace SimpleArchiver
             TeamConfig config,
             int evaluationBudget,
             int seed,
-            string? classifierPath = null
+            string? classifierPath = null,
+            bool fullChromosome = false
         )
         {
             if (evaluationBudget <= 0)
@@ -429,7 +691,7 @@ namespace SimpleArchiver
 
             for (int i = 0; i < evaluationBudget; i++)
             {
-                GaChromosome chromosome = RandomChromosome(rnd, validBlockSizes);
+                GaChromosome chromosome = RandomChromosome(rnd, validBlockSizes, fullChromosome);
                 GaIndividual candidate = EvaluateChromosome(
                     corpus,
                     chromosome,
@@ -450,7 +712,222 @@ namespace SimpleArchiver
             return result;
         }
 
-        // Чесне порівняння ГА та випадкового пошуку за однакової кількості обчислень Q + запис журналу поколінь
+        // Генерує сусідні стани хромосоми для локального пошуку (Hill Climbing)
+        public static List<GaChromosome> GetNeighbors(
+            GaChromosome current,
+            int[] validBlockSizes,
+            bool fullChromosome = true
+        )
+        {
+            var neighbors = new List<GaChromosome>();
+            var seen = new HashSet<string>(StringComparer.Ordinal) { current.GetSignature(fullChromosome) };
+
+            void TryAdd(GaChromosome candidate)
+            {
+                GaChromosome repaired = Repair(candidate, validBlockSizes);
+                string sig = repaired.GetSignature(fullChromosome);
+                if (seen.Add(sig))
+                    neighbors.Add(repaired);
+            }
+
+            // Сусіди за MaxChain
+            int chainIdx = Array.IndexOf(MaxChainCandidates, current.MaxChain);
+            if (chainIdx > 0)
+            {
+                var c = current.Clone();
+                c.MaxChain = MaxChainCandidates[chainIdx - 1];
+                TryAdd(c);
+            }
+            if (chainIdx >= 0 && chainIdx + 1 < MaxChainCandidates.Length)
+            {
+                var c = current.Clone();
+                c.MaxChain = MaxChainCandidates[chainIdx + 1];
+                TryAdd(c);
+            }
+
+            // Сусіди за BlockSize
+            int blockIdx = Array.IndexOf(validBlockSizes, current.BlockSize);
+            if (blockIdx > 0)
+            {
+                var c = current.Clone();
+                c.BlockSize = validBlockSizes[blockIdx - 1];
+                TryAdd(c);
+            }
+            if (blockIdx >= 0 && blockIdx + 1 < validBlockSizes.Length)
+            {
+                var c = current.Clone();
+                c.BlockSize = validBlockSizes[blockIdx + 1];
+                TryAdd(c);
+            }
+
+            // Сусіди за SplitUnit
+            int unitIdx = Array.IndexOf(SplitUnitCandidates, current.SplitUnit);
+            if (unitIdx > 0)
+            {
+                var c = current.Clone();
+                c.SplitUnit = SplitUnitCandidates[unitIdx - 1];
+                TryAdd(c);
+            }
+            if (unitIdx >= 0 && unitIdx + 1 < SplitUnitCandidates.Length)
+            {
+                var c = current.Clone();
+                c.SplitUnit = SplitUnitCandidates[unitIdx + 1];
+                TryAdd(c);
+            }
+
+            if (fullChromosome)
+            {
+                foreach (ParserKind kind in ParserCandidates)
+                {
+                    if (kind != current.Parser)
+                    {
+                        var c = current.Clone();
+                        c.Parser = kind;
+                        TryAdd(c);
+                    }
+                }
+
+                var dpFlip = current.Clone();
+                dpFlip.UseDpBlockSplit = !dpFlip.UseDpBlockSplit;
+                TryAdd(dpFlip);
+
+                var predFlip = current.Clone();
+                predFlip.UsePrediction = !predFlip.UsePrediction;
+                TryAdd(predFlip);
+
+                var stratFlip = current.Clone();
+                stratFlip.UseTypeStrategy = !stratFlip.UseTypeStrategy;
+                TryAdd(stratFlip);
+            }
+
+            return neighbors;
+        }
+
+        // Локальний пошук (Hill Climbing із перезапуском із випадкової точки на плато) за рівного бюджету Q
+        public static OptimizationResult RunLocalSearch(
+            List<ArchiveFile> corpus,
+            TeamConfig config,
+            int evaluationBudget,
+            int seed,
+            string? classifierPath = null,
+            bool fullChromosome = true
+        )
+        {
+            if (evaluationBudget <= 0)
+                throw new ArgumentException("кількість обчислень Q має бути додатною");
+
+            int[] validBlockSizes = ValidBlockSizes(config, corpus);
+            var rnd = new Random(seed);
+            var totalSw = Stopwatch.StartNew();
+
+            var result = new OptimizationResult
+            {
+                AlgorithmName = "Локальний пошук (Hill Climbing)",
+            };
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            int evaluations = 0;
+
+            GaChromosome start = RandomChromosome(rnd, validBlockSizes, fullChromosome);
+            visited.Add(start.GetSignature(fullChromosome));
+            GaIndividual current = EvaluateChromosome(
+                corpus,
+                start,
+                config,
+                classifierPath,
+                "HC-0"
+            );
+            result.Evaluated.Add(current);
+            evaluations++;
+            GaIndividual globalBest = current;
+
+            while (evaluations < evaluationBudget)
+            {
+                List<GaChromosome> neighbors = GetNeighbors(
+                    current.Chromosome,
+                    validBlockSizes,
+                    fullChromosome
+                );
+
+                // Перемішуємо сусідів і відкидаємо вже перевірені стани
+                for (int i = neighbors.Count - 1; i > 0; i--)
+                {
+                    int j = rnd.Next(i + 1);
+                    (neighbors[i], neighbors[j]) = (neighbors[j], neighbors[i]);
+                }
+
+                GaIndividual? bestImprovingNeighbor = null;
+                foreach (GaChromosome neighbor in neighbors)
+                {
+                    if (evaluations >= evaluationBudget)
+                        break;
+
+                    string sig = neighbor.GetSignature(fullChromosome);
+                    if (!visited.Add(sig))
+                        continue;
+
+                    GaIndividual candidate = EvaluateChromosome(
+                        corpus,
+                        neighbor,
+                        config,
+                        classifierPath,
+                        $"HC-{evaluations}"
+                    );
+                    result.Evaluated.Add(candidate);
+                    evaluations++;
+
+                    if (CompareIndividuals(candidate, globalBest) < 0)
+                        globalBest = candidate;
+
+                    if (
+                        CompareIndividuals(candidate, current) < 0
+                        && (
+                            bestImprovingNeighbor == null
+                            || CompareIndividuals(candidate, bestImprovingNeighbor) < 0
+                        )
+                    )
+                    {
+                        bestImprovingNeighbor = candidate;
+                    }
+                }
+
+                if (bestImprovingNeighbor != null)
+                {
+                    current = bestImprovingNeighbor;
+                }
+                else if (evaluations < evaluationBudget)
+                {
+                    // Досягнуто локального оптимуму: перезапуск з іншого неперевіреного стану
+                    GaChromosome restart = RandomChromosome(rnd, validBlockSizes, fullChromosome);
+                    for (int attempt = 0; attempt < 25; attempt++)
+                    {
+                        if (visited.Add(restart.GetSignature(fullChromosome)))
+                            break;
+                        restart = RandomChromosome(rnd, validBlockSizes, fullChromosome);
+                    }
+
+                    current = EvaluateChromosome(
+                        corpus,
+                        restart,
+                        config,
+                        classifierPath,
+                        $"HC-R{evaluations}"
+                    );
+                    result.Evaluated.Add(current);
+                    evaluations++;
+
+                    if (CompareIndividuals(current, globalBest) < 0)
+                        globalBest = current;
+                }
+            }
+
+            totalSw.Stop();
+            result.Best = globalBest;
+            result.Evaluations = evaluations;
+            result.TotalElapsedSeconds = totalSw.Elapsed.TotalSeconds;
+            return result;
+        }
+
+        // Чесне порівняння базового ГА та випадкового пошуку за однакової кількості обчислень Q
         public static GaComparisonReport CompareWithRandomSearch(
             List<ArchiveFile> corpus,
             TeamConfig config,
@@ -459,24 +936,42 @@ namespace SimpleArchiver
         {
             options ??= new GaRunOptions { Seed = config.Seed };
 
-            OptimizationResult ga = RunBasicGa(corpus, config, options);
+            OptimizationResult ga = options.Advanced
+                ? RunAdvancedGa(corpus, config, options)
+                : RunBasicGa(corpus, config, options);
+
             OptimizationResult random = RunRandomSearch(
                 corpus,
                 config,
                 ga.Evaluations,
                 options.Seed + 1000,
-                options.ClassifierPath
+                options.ClassifierPath,
+                options.Advanced
             );
+
+            OptimizationResult? local = options.Advanced
+                ? RunLocalSearch(
+                    corpus,
+                    config,
+                    ga.Evaluations,
+                    options.Seed + 2000,
+                    options.ClassifierPath,
+                    true
+                )
+                : null;
 
             if (!string.IsNullOrWhiteSpace(options.LogPath))
                 SaveGenerationsTsv(ga.History, options.LogPath);
 
-            string table = BuildComparisonTable(new[] { ga, random });
+            string table = local == null
+                ? BuildComparisonTable(new[] { ga, random }, options.Advanced)
+                : BuildComparisonTable(new[] { ga, random, local }, options.Advanced);
 
             return new GaComparisonReport
             {
                 Genetic = ga,
                 RandomSearch = random,
+                LocalSearch = local,
                 TableText = table,
                 GenerationsLogPath = options.LogPath,
             };
@@ -491,7 +986,7 @@ namespace SimpleArchiver
 
             var sb = new StringBuilder();
             sb.AppendLine(
-                "generation\tevaluations\tbest_q\tavg_q\tbest_s\tbest_t\tbest_archive_bytes\tbest_time_s\tbest_params"
+                "generation\tevaluations\tbest_q\tavg_q\tbest_s\tbest_t\tbest_archive_bytes\tbest_time_s\tmutation_rate\tbest_params"
             );
 
             foreach (GaGenerationRecord row in history)
@@ -499,7 +994,7 @@ namespace SimpleArchiver
                 sb.AppendLine(
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}\t{1}\t{2:F6}\t{3:F6}\t{4:F6}\t{5:F6}\t{6}\t{7:F4}\t{8}",
+                        "{0}\t{1}\t{2:F6}\t{3:F6}\t{4:F6}\t{5:F6}\t{6}\t{7:F4}\t{8:F4}\t{9}",
                         row.Generation,
                         row.Evaluations,
                         row.BestQ,
@@ -508,6 +1003,7 @@ namespace SimpleArchiver
                         row.BestT,
                         row.BestArchiveBytes,
                         row.BestElapsedSeconds,
+                        row.MutationRate,
                         row.BestParams
                     )
                 );
@@ -516,8 +1012,11 @@ namespace SimpleArchiver
             File.WriteAllText(filePath, sb.ToString(), new UTF8Encoding(false));
         }
 
-        // Таблиця звіту «ГА проти випадкового пошуку» (Пункт 12)
-        public static string BuildComparisonTable(IReadOnlyList<OptimizationResult> results)
+        // Таблиця звіту порівняння методів оптимізації за однакового бюджету Q
+        public static string BuildComparisonTable(
+            IReadOnlyList<OptimizationResult> results,
+            bool fullChromosome = false
+        )
         {
             var sb = new StringBuilder();
             sb.AppendLine("Порівняння методів оптимізації за однакового бюджету обчислень Q");
@@ -540,7 +1039,7 @@ namespace SimpleArchiver
                         eval.T,
                         eval.Q,
                         eval.RestoredExact ? "OK" : "ПОМИЛКА",
-                        res.Best.Chromosome.Describe()
+                        res.Best.Chromosome.Describe(fullChromosome)
                     )
                 );
             }
@@ -551,7 +1050,9 @@ namespace SimpleArchiver
         static GaGenerationRecord BuildGenerationRecord(
             int generation,
             int evaluations,
-            List<GaIndividual> sortedPopulation
+            double mutationRate,
+            List<GaIndividual> sortedPopulation,
+            bool fullChromosome
         )
         {
             double sumQ = 0;
@@ -569,7 +1070,8 @@ namespace SimpleArchiver
                 BestT = best.Evaluation.T,
                 BestArchiveBytes = best.Evaluation.ArchiveBytes,
                 BestElapsedSeconds = best.Evaluation.ElapsedSeconds,
-                BestParams = best.Chromosome.Describe(),
+                MutationRate = mutationRate,
+                BestParams = best.Chromosome.Describe(fullChromosome),
             };
         }
 
