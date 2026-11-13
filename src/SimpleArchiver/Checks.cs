@@ -19,6 +19,7 @@ namespace SimpleArchiver
             ok &= Knapsack();
             ok &= Perceptron();
             ok &= Predictor();
+            ok &= GeneticAlgorithm();
 
             Console.WriteLine();
             Console.WriteLine(
@@ -195,6 +196,69 @@ namespace SimpleArchiver
             bool ok = Convert.ToHexString(restored) == Convert.ToHexString(data);
             Print("Прогноз байта", ok, "із залишків відновлено початкові дані");
             return ok;
+        }
+
+        // Контроль 9: ГА (кейс №17 елітизм) та чесне порівняння з випадковим пошуком
+        static bool GeneticAlgorithm()
+        {
+            var corpus = new List<ArchiveFile>
+            {
+                new ArchiveFile("hello.txt", Hello480()),
+                new ArchiveFile("smooth.bin", MakeSmooth(4096)),
+            };
+            TeamConfig config = TeamConfig.LoadIfExists(TeamConfig.DefaultPath);
+            string tempLog = Path.Combine(
+                Path.GetTempPath(),
+                "sarc-ga-check-" + Guid.NewGuid().ToString("N") + ".tsv"
+            );
+
+            try
+            {
+                var options = new GaRunOptions
+                {
+                    PopulationSize = 4,
+                    Generations = 2,
+                    ElitismCount = 1,
+                    Seed = config.Seed,
+                    LogPath = tempLog,
+                };
+
+                GaComparisonReport report = GeneticOptimizer.CompareWithRandomSearch(
+                    corpus,
+                    config,
+                    options
+                );
+
+                double bestGen0 = report.Genetic.History[0].BestQ;
+                double bestLast = report.Genetic.History[^1].BestQ;
+                bool ok =
+                    report.Genetic.History.Count == 3
+                    && report.Genetic.Best.Evaluation.RestoredExact
+                    && report.RandomSearch.Best.Evaluation.RestoredExact
+                    && bestLast >= bestGen0
+                    && report.Genetic.Evaluations == report.RandomSearch.Evaluations
+                    && File.Exists(tempLog);
+
+                Print(
+                    "Генетичний алгоритм",
+                    ok,
+                    $"Q(gen0)={bestGen0:F4}, Q(last)={bestLast:F4}, Q(random)={report.RandomSearch.Best.Fitness:F4}, обчислень={report.Genetic.Evaluations}"
+                );
+                return ok;
+            }
+            finally
+            {
+                if (File.Exists(tempLog))
+                    File.Delete(tempLog);
+            }
+        }
+
+        static byte[] MakeSmooth(int count)
+        {
+            var data = new byte[count];
+            for (int i = 0; i < count; i++)
+                data[i] = (byte)(128 + 100 * Math.Sin(i / 40.0));
+            return data;
         }
     }
 }

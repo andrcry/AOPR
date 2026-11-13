@@ -367,5 +367,174 @@ namespace SimpleArchiver.Tests
                 TestHelpers.ErrorWhenReading(volume, TestHelpers.Password)
             );
         }
+
+        // Оптимізація: базовий генетичний алгоритм і випадковий пошук
+
+        static string RepoDataFolder()
+        {
+            string? folder = AppContext.BaseDirectory;
+            while (folder != null && !File.Exists(Path.Combine(folder, "SimpleArchiver.slnx")))
+                folder = Path.GetDirectoryName(folder);
+
+            if (folder == null)
+                throw new DirectoryNotFoundException("не знайдено папку проєкту з SimpleArchiver.slnx");
+
+            return Path.Combine(folder, "data");
+        }
+
+        static List<ArchiveFile> OptimizationSampleCorpus()
+        {
+            return new List<ArchiveFile>
+            {
+                new ArchiveFile("text.txt", SyntheticFiles.Text(6000, 101)),
+                new ArchiveFile("data.csv", SyntheticFiles.Csv(5000, 102)),
+                new ArchiveFile("zeros.bin", SyntheticFiles.Synthetic(4000, 103)),
+                new ArchiveFile("noise.bin", TestHelpers.RandomBytes(3000, 104)),
+            };
+        }
+
+        // Кейс №17: строгий елітизм гарантує, що найкращий результат останнього покоління не гірший за покоління 0
+        [Fact]
+        public void GeneticAlgorithmElitismNeverWorseThanGen0()
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(
+                Path.Combine(RepoDataFolder(), "team_config.json")
+            );
+            var options = new GaRunOptions
+            {
+                PopulationSize = 5,
+                Generations = 3,
+                ElitismCount = 1,
+                Seed = config.Seed,
+                LogPath = "",
+            };
+
+            OptimizationResult result = GeneticOptimizer.RunBasicGa(
+                OptimizationSampleCorpus(),
+                config,
+                options
+            );
+
+            Assert.Equal(options.Generations + 1, result.History.Count);
+            double bestGen0 = result.History[0].BestQ;
+            double bestLast = result.History[^1].BestQ;
+
+            Assert.True(result.Best.Evaluation.RestoredExact);
+            Assert.True(bestGen0 > 0);
+            Assert.True(bestLast >= bestGen0, $"bestLast={bestLast} < bestGen0={bestGen0}");
+
+            for (int g = 1; g < result.History.Count; g++)
+                Assert.True(result.History[g].BestQ >= result.History[g - 1].BestQ);
+        }
+
+        // Чесне порівняння ГА та випадкового пошуку: однакова кількість обчислень Q і формування таблиці
+        [Fact]
+        public void GeneticAlgorithmAndRandomSearchUseEqualBudget()
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(
+                Path.Combine(RepoDataFolder(), "team_config.json")
+            );
+            string tempLog = Path.Combine(
+                Path.GetTempPath(),
+                "sarc-ga-cmp-" + Guid.NewGuid().ToString("N") + ".tsv"
+            );
+
+            try
+            {
+                var options = new GaRunOptions
+                {
+                    PopulationSize = 4,
+                    Generations = 2,
+                    ElitismCount = 1,
+                    Seed = 42,
+                    LogPath = tempLog,
+                };
+
+                GaComparisonReport report = GeneticOptimizer.CompareWithRandomSearch(
+                    OptimizationSampleCorpus(),
+                    config,
+                    options
+                );
+
+                Assert.Equal(report.Genetic.Evaluations, report.RandomSearch.Evaluations);
+                Assert.Equal(4 + 2 * 3, report.Genetic.Evaluations);
+                Assert.True(report.Genetic.Best.Evaluation.RestoredExact);
+                Assert.True(report.RandomSearch.Best.Evaluation.RestoredExact);
+                Assert.Contains("Генетичний алгоритм", report.TableText);
+                Assert.Contains("Випадковий пошук", report.TableText);
+            }
+            finally
+            {
+                if (File.Exists(tempLog))
+                    File.Delete(tempLog);
+            }
+        }
+
+        // Запис журналу поколінь ga_generations.tsv і виключення labels.csv при завантаженні data/corpus/
+        [Fact]
+        public void GeneticAlgorithmWritesGenerationsTsvAndExcludesLabelsCsv()
+        {
+            string corpusDir = Path.Combine(RepoDataFolder(), "corpus");
+            List<ArchiveFile> corpus = GeneticOptimizer.LoadCorpus(new[] { corpusDir });
+
+            Assert.Equal(21, corpus.Count);
+            Assert.DoesNotContain(corpus, f => f.Name.Equals("labels.csv", StringComparison.OrdinalIgnoreCase));
+
+            TeamConfig config = TeamConfig.Load(Path.Combine(RepoDataFolder(), "team_config.json"));
+            string tempLog = Path.Combine(
+                Path.GetTempPath(),
+                "sarc-ga-log-" + Guid.NewGuid().ToString("N") + ".tsv"
+            );
+
+            try
+            {
+                var options = new GaRunOptions
+                {
+                    PopulationSize = 4,
+                    Generations = 2,
+                    ElitismCount = 1,
+                    Seed = 7,
+                    LogPath = tempLog,
+                };
+
+                GaComparisonReport report = GeneticOptimizer.CompareWithRandomSearch(
+                    OptimizationSampleCorpus(),
+                    config,
+                    options
+                );
+
+                Assert.True(File.Exists(tempLog));
+                string[] lines = File.ReadAllLines(tempLog);
+                Assert.Equal(1 + options.Generations + 1, lines.Length);
+                Assert.StartsWith("generation\tevaluations\tbest_q\t", lines[0]);
+            }
+            finally
+            {
+                if (File.Exists(tempLog))
+                    File.Delete(tempLog);
+            }
+        }
+
+        // Оператори ГА (турнір, одноточковий кросовер, мутація) утворюють коректну 3-генну хромосому
+        [Fact]
+        public void GeneticOperatorsProduceValidBasicChromosomes()
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(
+                Path.Combine(RepoDataFolder(), "team_config.json")
+            );
+            int[] validBlocks = GeneticOptimizer.ValidBlockSizes(config, OptimizationSampleCorpus());
+            var rnd = new Random(123);
+
+            var p1 = new GaChromosome { MaxChain = 8, BlockSize = validBlocks[0], SplitUnit = 512 };
+            var p2 = new GaChromosome { MaxChain = 128, BlockSize = validBlocks[^1], SplitUnit = 2048 };
+
+            GaChromosome child = GeneticOptimizer.CrossoverSinglePoint(p1, p2, rnd, validBlocks);
+            GaChromosome mutated = GeneticOptimizer.Mutate(child, 1.0, rnd, validBlocks);
+
+            Assert.Contains(child.BlockSize, validBlocks);
+            Assert.Equal(0, child.BlockSize % child.SplitUnit);
+            Assert.Contains(mutated.BlockSize, validBlocks);
+            Assert.Equal(0, mutated.BlockSize % mutated.SplitUnit);
+        }
     }
 }
