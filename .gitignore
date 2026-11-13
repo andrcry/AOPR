@@ -10,5 +10,7 @@ TestResults/
 .vscode/
 *.arc
 !data/reference/*.arc
-data/
-data/
+# тимчасові файли експериментів і розпакування
+out*/
+*.private
+*.public

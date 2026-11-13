@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Збірка
+        run: dotnet build SimpleArchiver.slnx -c Release
+
+      - name: Автотести
+        run: dotnet test SimpleArchiver.slnx -c Release --no-build --verbosity normal
+
+      - name: Контрольні точки
+        run: dotnet run -c Release --no-build --project src/SimpleArchiver -- check
+
+      - name: Еталонні архіви викладача
+        run: dotnet run -c Release --no-build --project src/SimpleArchiver -- ref-check data/reference
