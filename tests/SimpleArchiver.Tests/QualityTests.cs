@@ -90,12 +90,15 @@ namespace SimpleArchiver.Tests
             try
             {
                 string corpus = Path.Combine(TestHelpers.DataFolder(), "corpus");
+                long expectedBytes = InputFiles
+                    .Collect(new[] { corpus }, 0)
+                    .Sum(p => new FileInfo(p).Length);
                 List<string> lines = QualityRun.Build(
                     new string[] { "q", "--log", log, corpus },
                     1
                 );
 
-                Assert.StartsWith("Метрика Q на корпусі: 21 файлів, 329903 байтів", lines[0]);
+                Assert.StartsWith($"Метрика Q на корпусі: 21 файлів, {expectedBytes} байтів", lines[0]);
                 Assert.EndsWith("\tтак", lines[4]);
 
                 string[] logLines = File.ReadAllLines(log);

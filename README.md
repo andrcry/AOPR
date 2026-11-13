@@ -29,6 +29,7 @@ dotnet --version
 ```bash
 dotnet build SimpleArchiver.slnx
 dotnet test SimpleArchiver.slnx
+dotnet test SimpleArchiver.slnx --collect:"XPlat Code Coverage"
 dotnet run --project src/SimpleArchiver -- check
 dotnet run --project src/SimpleArchiver -- ref-check data/reference
 ```
@@ -125,13 +126,14 @@ Q = alpha·S + beta·T,   S = B_orig / (B_orig + B_arc),   T = t_ref / (t_ref + 
 | Команда | Що робить |
 |---|---|
 | `q [опції як у pack] [--log файл] [файли_або_папки]` | базове Q однієї конфігурації (без файлів — `data/corpus`), лог прогону в `experiments/corpus_run.log` |
-| `report [--quick] [--ga-pop N] [--ga-gen N]` | **усі таблиці звіту** в `experiments/FULL_REPORT_TABLES.md` + лог `experiments/corpus_run.log` (≈ 3 хв; `--quick` — без запуску ГА) |
+| `report` (або `report-all`) `[--quick] [--ga-pop N] [--ga-gen N]` | **усі таблиці звіту** в `experiments/FULL_REPORT_TABLES.md` + лог `experiments/corpus_run.log` (≈ 3 хв; `--quick` — без запуску ГА) |
 | `measure файли_або_папки` | таблиця 1: жадібний, лінивий і ДП-розбір LZ77, розбиття на блоки, підсумок за групами |
 | `q-table [--model файл] [файли_або_папки]` | таблиця 2: вплив кожного блока на Q (кожен блок вимикається окремо від повної системи), файл `experiments/q_table.tsv` |
 | `knapsack-table [--volume байти] [--model файл] файли_або_папки` | таблиця 3: ДП-рюкзак проти жадібного на першому томі |
 | `crypto-order [файли_або_папки]` | таблиця 4: стиснути → зашифрувати проти зашифрувати → стиснути, ентропія до і після AES |
 | `ga [--advanced] [--pop N] [--gen N] [--seed N] [--out файл]` | таблиця 5: ГА проти випадкового пошуку (з `--advanced` — повна хромосома, рівномірний кросовер, адаптивна мутація, локальний пошук); журнал поколінь `experiments/ga_generations.tsv` |
 | `pareto [--pop N] [--gen N]` | NSGA-II за (S, T), фронт Парето в `experiments/pareto_front.md` |
+| `attack [--cipher xor\|vigenere] [--key текст] [--pad байти] [файли_або_папки]` | модуль атаки: злам XOR/Віженера ГА, атака на метадані та перевірка `E_HMAC` |
 | `entropy-table файли_або_папки` | ентропія байтів і залишків прогнозу за групами |
 | `leak-table [--pad байти] файли_або_папки` | витік метаданих через розміри томів і вартість вирівнювання |
 
@@ -212,7 +214,7 @@ src/SimpleArchiver/
   Huffman/                   біти, дерево Гаффмана, канонічні коди, таблиці кодів
   Compression/               LZ77 (жадібний, лінивий, ДП), кодування блока, ДП-розбиття на блоки
   Analysis/                  ознаки, перцептрон, класифікатор, прогноз байта, метрика Q, таблиці звіту, report
-  Crypto/                    ключі (PBKDF2), AES-CTR, HMAC, Діффі — Геллман, витік метаданих, порядок операцій
+  Crypto/                    ключі (PBKDF2), AES-CTR, HMAC, Діффі — Геллман, витік метаданих, порядок операцій, модуль атаки (`WeakCipherAttack`)
   Format/                    заголовок тому, таблиці файлів і блоків, вирівнювання
   Packing/                   рюкзак, розкладання блоків по томах
   Optimization/              генетичний алгоритм, випадковий і локальний пошук, NSGA-II
@@ -224,6 +226,8 @@ tests/SimpleArchiver.Tests/  автотести
 data/                        матеріали викладача
 experiments/                 результати експериментів і таблиці звіту
 docs/decisions.md            лог інженерних рішень
+docs/report/REPORT.md        фінальний аналітичний звіт з таблицями і висновками
+META-USAGE.md                звіт про використання ШІ та верифікацію командою (п. 11.4)
 .github/workflows/ci.yml     збірка і тести на GitHub Actions
 ```
 
@@ -237,3 +241,25 @@ docs/decisions.md            лог інженерних рішень
 - **`вибірка порожня: перевірте labels.csv`** — у `labels.csv` немає рядків або імена не збігаються з файлами.
 - **Кілька файлів через `*` на Windows** — PowerShell не розгортає `*`; передавайте папку (`data/corpus`) — програма розгорне її сама.
 - **Незрозумілі символи замість українських літер у cmd** — виконайте `chcp 65001`.
+
+## 13. Команди оптимізації, звіту, атаки та покриття тестів
+
+Швидкий набір команд для демонстрації на захисті проєкту:
+
+```bash
+# Базовий та просунутий генетичний алгоритм (порівняння з Random Search і Hill Climbing)
+dotnet run -c Release --project src/SimpleArchiver -- ga data/corpus
+dotnet run -c Release --project src/SimpleArchiver -- ga --advanced data/corpus
+
+# Багатокритеріальна оптимізація за (S, T) — фронт Парето (NSGA-II)
+dotnet run -c Release --project src/SimpleArchiver -- pareto data/corpus
+
+# Повний прогін усіх експериментів та генерація таблиць звіту
+dotnet run -c Release --project src/SimpleArchiver -- report-all
+
+# Модуль атаки: злам XOR/Віженера через ГА, атака на метадані та перевірка E_HMAC
+dotnet run -c Release --project src/SimpleArchiver -- attack data/corpus
+
+# Збір покриття автотестів (XPlat Code Coverage, Cobertura XML у TestResults/)
+dotnet test SimpleArchiver.slnx --collect:"XPlat Code Coverage"
+```
