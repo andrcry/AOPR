@@ -26,6 +26,7 @@ namespace SimpleArchiver
     // ga - оптимізація параметрів генетичним алгоритмом (опція --advanced додає повну хромосому і локальний пошук)
     // pareto - багатокритеріальна оптимізація за (S, T) і побудова фронту Парето (NSGA-II)
     // q - базове Q на корпусі: опції як у pack і --log файл, потім файли або папки (без них - data/corpus)
+    // crypto-order - експеримент: стиснути -> зашифрувати проти зашифрувати -> стиснути
     // q-table - таблиця впливу кожного блока на Q: опція --model файл, потім файли або папки (без них - data/corpus)
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується.
@@ -82,6 +83,8 @@ namespace SimpleArchiver
                     QualityRun.Print(args, 1);
                 else if (command == "q-table")
                     BlockImpactTable.Print(args, 1);
+                else if (command == "crypto-order")
+                    CryptoOrderTable.Print(args.Length >= 2 ? args : new[] { "crypto-order", "data/corpus" }, 1);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -156,6 +159,7 @@ namespace SimpleArchiver
                 "опції q: --parser greedy|lazy|dp, --split dp, --predict, --model файл, --strategy, --log файл"
             );
             Console.WriteLine("q-table --model файл файли_або_папки");
+            Console.WriteLine("crypto-order [файли_або_папки]");
             Console.WriteLine("check");
         }
 
