@@ -1,7 +1,7 @@
-generation	evaluations	best_q	avg_q	best_s	best_t	best_archive_bytes	best_time_s	best_params
-0	8	0.802816	0.776993	0.721405	0.992775	129419	0.2183	MaxChain=64, BlockSize=16384, SplitUnit=512
-1	15	0.803435	0.791131	0.722531	0.992213	128695	0.2354	MaxChain=256, BlockSize=16384, SplitUnit=1024
-2	22	0.803821	0.796200	0.722531	0.993497	128695	0.1964	MaxChain=256, BlockSize=16384, SplitUnit=512
-3	29	0.809951	0.801689	0.731307	0.993455	123129	0.1976	MaxChain=256, BlockSize=32768, SplitUnit=512
-4	36	0.809951	0.793996	0.731307	0.993455	123129	0.1976	MaxChain=256, BlockSize=32768, SplitUnit=512
-5	43	0.809951	0.806087	0.731307	0.993455	123129	0.1976	MaxChain=256, BlockSize=32768, SplitUnit=512
+generation	evaluations	best_q	avg_q	best_s	best_t	best_archive_bytes	best_time_s	mutation_rate	best_params
+0	8	0.803753	0.789313	0.725578	0.986161	126747	0.4210	0.4500	Parser=Dp, MaxChain=256, BlockSize=16384, SplitUnit=4096, DpSplit=off, Predict=on, Strategy=on
+1	15	0.803753	0.778831	0.725578	0.986161	126747	0.4210	0.4500	Parser=Dp, MaxChain=256, BlockSize=16384, SplitUnit=4096, DpSplit=off, Predict=on, Strategy=on
+2	22	0.803753	0.779853	0.725578	0.986161	126747	0.4210	0.3575	Parser=Dp, MaxChain=256, BlockSize=16384, SplitUnit=4096, DpSplit=off, Predict=on, Strategy=on
+3	29	0.803753	0.792644	0.725578	0.986161	126747	0.4210	0.2650	Parser=Dp, MaxChain=256, BlockSize=16384, SplitUnit=4096, DpSplit=off, Predict=on, Strategy=on
+4	36	0.805245	0.799238	0.726990	0.987840	125850	0.3693	0.1725	Parser=Lazy, MaxChain=256, BlockSize=16384, SplitUnit=4096, DpSplit=off, Predict=on, Strategy=off
+5	43	0.805245	0.802802	0.726990	0.987840	125850	0.3693	0.0800	Parser=Lazy, MaxChain=256, BlockSize=16384, SplitUnit=4096, DpSplit=off, Predict=on, Strategy=off

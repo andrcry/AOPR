@@ -536,5 +536,252 @@ namespace SimpleArchiver.Tests
             Assert.Contains(mutated.BlockSize, validBlocks);
             Assert.Equal(0, mutated.BlockSize % mutated.SplitUnit);
         }
+
+        // Просунутий ГА: повна хромосома, адаптивна мутація, рівномірний кросовер, порівняння з локальним пошуком
+        [Fact]
+        public void AdvancedGaUsesFullChromosomeAdaptiveMutationAndLocalSearch()
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(
+                Path.Combine(RepoDataFolder(), "team_config.json")
+            );
+            string tempModel = Path.GetTempFileName();
+            string tempLog = Path.Combine(
+                Path.GetTempPath(),
+                "sarc-ga-adv-" + Guid.NewGuid().ToString("N") + ".tsv"
+            );
+            SyntheticFiles.TrainClassifier().Save(tempModel);
+
+            try
+            {
+                var options = new GaRunOptions
+                {
+                    PopulationSize = 4,
+                    Generations = 3,
+                    ElitismCount = 1,
+                    Advanced = true,
+                    AdaptiveMutation = true,
+                    InitialMutationRate = 0.50,
+                    FinalMutationRate = 0.10,
+                    Crossover = CrossoverType.Uniform,
+                    Seed = config.Seed,
+                    ClassifierPath = tempModel,
+                    LogPath = tempLog,
+                };
+
+                GaComparisonReport report = GeneticOptimizer.CompareWithRandomSearch(
+                    OptimizationSampleCorpus(),
+                    config,
+                    options
+                );
+
+                Assert.NotNull(report.LocalSearch);
+                Assert.Equal(report.Genetic.Evaluations, report.RandomSearch.Evaluations);
+                Assert.Equal(report.Genetic.Evaluations, report.LocalSearch!.Evaluations);
+                Assert.True(report.Genetic.Best.Evaluation.RestoredExact);
+                Assert.True(report.LocalSearch.Best.Evaluation.RestoredExact);
+
+                // Строгий елітизм зберігається і в просунутому режимі
+                Assert.True(report.Genetic.History[^1].BestQ >= report.Genetic.History[0].BestQ);
+
+                // Адаптивна ймовірність мутації вища на початку та спадає до останнього покоління
+                double firstGenMut = report.Genetic.History[1].MutationRate;
+                double lastGenMut = report.Genetic.History[^1].MutationRate;
+                Assert.True(
+                    firstGenMut > lastGenMut,
+                    $"Очікувалося спадання мутації: first={firstGenMut}, last={lastGenMut}"
+                );
+
+                Assert.Contains("Локальний пошук", report.TableText);
+                Assert.True(File.Exists(tempLog));
+            }
+            finally
+            {
+                if (File.Exists(tempModel))
+                    File.Delete(tempModel);
+                if (File.Exists(tempLog))
+                    File.Delete(tempLog);
+            }
+        }
+
+        // Другий кросовер (Uniform) комбінує гени повної хромосоми і зберігає допустимі інваріанти
+        [Fact]
+        public void UniformCrossoverCombinesFullChromosomeGenesSafely()
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(
+                Path.Combine(RepoDataFolder(), "team_config.json")
+            );
+            int[] validBlocks = GeneticOptimizer.ValidBlockSizes(config, OptimizationSampleCorpus());
+
+            var p1 = new GaChromosome
+            {
+                MaxChain = 8,
+                BlockSize = validBlocks[0],
+                SplitUnit = 512,
+                Parser = ParserKind.Greedy,
+                UseDpBlockSplit = false,
+                UsePrediction = false,
+                UseTypeStrategy = false,
+            };
+            var p2 = new GaChromosome
+            {
+                MaxChain = 256,
+                BlockSize = validBlocks[^1],
+                SplitUnit = 4096,
+                Parser = ParserKind.Dp,
+                UseDpBlockSplit = true,
+                UsePrediction = true,
+                UseTypeStrategy = true,
+            };
+
+            bool sawFromP1 = false;
+            bool sawFromP2 = false;
+            for (int seed = 1; seed <= 10; seed++)
+            {
+                GaChromosome child = GeneticOptimizer.CrossoverUniform(
+                    p1,
+                    p2,
+                    new Random(seed),
+                    validBlocks,
+                    fullChromosome: true
+                );
+
+                Assert.Contains(child.BlockSize, validBlocks);
+                Assert.Equal(0, child.BlockSize % child.SplitUnit);
+                if (child.UseDpBlockSplit)
+                    Assert.True(child.BlockSize / child.SplitUnit <= 8);
+
+                if (child.Parser == ParserKind.Greedy || !child.UsePrediction)
+                    sawFromP1 = true;
+                if (child.Parser == ParserKind.Dp || child.UsePrediction)
+                    sawFromP2 = true;
+            }
+
+            Assert.True(sawFromP1 && sawFromP2);
+        }
+
+        // Локальний пошук генерує сусідів і дотримується точного бюджету обчислень Q
+        [Fact]
+        public void LocalSearchGeneratesNeighborsAndUsesExactBudget()
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(
+                Path.Combine(RepoDataFolder(), "team_config.json")
+            );
+            List<ArchiveFile> corpus = OptimizationSampleCorpus();
+            int[] validBlocks = GeneticOptimizer.ValidBlockSizes(config, corpus);
+
+            var center = new GaChromosome
+            {
+                MaxChain = 32,
+                BlockSize = validBlocks[Math.Min(1, validBlocks.Length - 1)],
+                SplitUnit = 1024,
+                Parser = ParserKind.Lazy,
+            };
+
+            List<GaChromosome> neighbors = GeneticOptimizer.GetNeighbors(
+                center,
+                validBlocks,
+                fullChromosome: true
+            );
+            Assert.True(neighbors.Count >= 5);
+
+            const int budget = 8;
+            OptimizationResult local = GeneticOptimizer.RunLocalSearch(
+                corpus,
+                config,
+                budget,
+                seed: 99,
+                fullChromosome: true
+            );
+
+            Assert.Equal(budget, local.Evaluations);
+            Assert.True(local.Best.Evaluation.RestoredExact);
+            Assert.True(local.Best.Fitness > 0);
+        }
+
+        // Перевірка відношення домінування за Парето за компонентами (S, T)
+        [Fact]
+        public void ParetoDominanceFollowsStrictDefinition()
+        {
+            var a = new QEvaluation { RestoredExact = true, S = 0.75, T = 0.90 };
+            var b = new QEvaluation { RestoredExact = true, S = 0.70, T = 0.90 };
+            var c = new QEvaluation { RestoredExact = true, S = 0.75, T = 0.85 };
+            var d = new QEvaluation { RestoredExact = true, S = 0.65, T = 0.95 }; // компроміс із a
+            var broken = new QEvaluation { RestoredExact = false, S = 0.99, T = 0.99 };
+
+            Assert.True(ParetoOptimizer.Dominates(a, b));
+            Assert.True(ParetoOptimizer.Dominates(a, c));
+            Assert.False(ParetoOptimizer.Dominates(a, a));
+            Assert.False(ParetoOptimizer.Dominates(a, d));
+            Assert.False(ParetoOptimizer.Dominates(d, a));
+            Assert.False(ParetoOptimizer.Dominates(broken, a));
+            Assert.True(ParetoOptimizer.Dominates(a, broken));
+        }
+
+        // Фронт Парето: усі точки взаємно недоміновані, зберігається Markdown-таблиця
+        [Fact]
+        public void ParetoFrontPointsAreMutuallyNonDominatedAndSavedToMarkdown()
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(
+                Path.Combine(RepoDataFolder(), "team_config.json")
+            );
+            string tempMd = Path.Combine(
+                Path.GetTempPath(),
+                "sarc-pareto-" + Guid.NewGuid().ToString("N") + ".md"
+            );
+
+            try
+            {
+                var options = new ParetoRunOptions
+                {
+                    PopulationSize = 4,
+                    Generations = 2,
+                    Seed = config.Seed,
+                    OutputPath = tempMd,
+                };
+
+                ParetoResult result = ParetoOptimizer.Optimize(
+                    OptimizationSampleCorpus(),
+                    config,
+                    options
+                );
+
+                Assert.NotEmpty(result.ParetoFront);
+                Assert.True(File.Exists(tempMd));
+
+                // Перевірка взаємної недомінованості усіх точок фронту Парето
+                for (int i = 0; i < result.ParetoFront.Count; i++)
+                {
+                    Assert.True(result.ParetoFront[i].Evaluation.RestoredExact);
+                    for (int j = 0; j < result.ParetoFront.Count; j++)
+                    {
+                        if (i == j)
+                            continue;
+
+                        Assert.False(
+                            ParetoOptimizer.Dominates(
+                                result.ParetoFront[i],
+                                result.ParetoFront[j]
+                            ),
+                            $"Точка {i} помилково домінує над точкою {j} у фронті Парето"
+                        );
+                    }
+                }
+
+                // Сортування за спаданням S
+                for (int i = 1; i < result.ParetoFront.Count; i++)
+                    Assert.True(
+                        result.ParetoFront[i - 1].Evaluation.S >= result.ParetoFront[i].Evaluation.S
+                    );
+
+                string md = File.ReadAllText(tempMd);
+                Assert.Contains("# Фронт Парето", md);
+                Assert.Contains("| # | Конфігурація", md);
+            }
+            finally
+            {
+                if (File.Exists(tempMd))
+                    File.Delete(tempMd);
+            }
+        }
     }
 }

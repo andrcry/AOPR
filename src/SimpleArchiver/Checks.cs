@@ -20,6 +20,7 @@ namespace SimpleArchiver
             ok &= Perceptron();
             ok &= Predictor();
             ok &= GeneticAlgorithm();
+            ok &= ParetoFront();
 
             Console.WriteLine();
             Console.WriteLine(
@@ -251,6 +252,43 @@ namespace SimpleArchiver
                 if (File.Exists(tempLog))
                     File.Delete(tempLog);
             }
+        }
+
+        // Контроль 10: багатокритеріальна оптимізація за (S, T) і взаємна недомінованість фронту Парето
+        static bool ParetoFront()
+        {
+            var corpus = new List<ArchiveFile>
+            {
+                new ArchiveFile("hello.txt", Hello480()),
+                new ArchiveFile("smooth.bin", MakeSmooth(4096)),
+            };
+            TeamConfig config = TeamConfig.LoadIfExists(TeamConfig.DefaultPath);
+            var options = new ParetoRunOptions
+            {
+                PopulationSize = 4,
+                Generations = 1,
+                Seed = config.Seed,
+                OutputPath = "",
+            };
+
+            ParetoResult result = ParetoOptimizer.Optimize(corpus, config, options);
+            bool nonDominated = true;
+            for (int i = 0; i < result.ParetoFront.Count; i++)
+            {
+                for (int j = 0; j < result.ParetoFront.Count; j++)
+                {
+                    if (i != j && ParetoOptimizer.Dominates(result.ParetoFront[i], result.ParetoFront[j]))
+                        nonDominated = false;
+                }
+            }
+
+            bool ok = result.ParetoFront.Count >= 1 && nonDominated;
+            Print(
+                "Фронт Парето",
+                ok,
+                $"точок на фронті={result.ParetoFront.Count}, оцінок={result.Evaluations}, недомінованість={(nonDominated ? "так" : "ні")}"
+            );
+            return ok;
         }
 
         static byte[] MakeSmooth(int count)

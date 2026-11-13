@@ -23,7 +23,8 @@ namespace SimpleArchiver
     // demo-data - створити замінник файлів викладача для демонстрації: опція --seed число, потім папка
     // ref-check - перевірити еталонні і зіпсовані архіви: папка reference
     // team-config - показати параметри з data/team_config.json або з файла, переданого після команди
-    // ga - оптимізація параметрів генетичним алгоритмом та порівняння з випадковим пошуком
+    // ga - оптимізація параметрів генетичним алгоритмом (опція --advanced додає повну хромосому і локальний пошук)
+    // pareto - багатокритеріальна оптимізація за (S, T) і побудова фронту Парето (NSGA-II)
     // check - контрольні точки всіх алгоритмів
     // Пароль береться зі змінної SARC_PASSWORD або запитується.
     // На старті програма читає data/team_config.json: розмір блока, розмір тому і пріоритети типів
@@ -73,6 +74,8 @@ namespace SimpleArchiver
                     PrintTeamConfig(args);
                 else if (command == "ga")
                     RunGa(args);
+                else if (command == "pareto")
+                    RunPareto(args);
                 else if (command == "check")
                     return Checks.RunAll() ? 0 : 1;
                 else
@@ -135,7 +138,13 @@ namespace SimpleArchiver
             Console.WriteLine("ref-check папка_reference");
             Console.WriteLine("team-config або team-config файл");
             Console.WriteLine("ga [опції] [файли_або_папки]");
-            Console.WriteLine("опції ga: --pop N, --gen N, --seed N, --out файл, --model файл");
+            Console.WriteLine(
+                "опції ga: --advanced, --crossover single|uniform, --pop N, --gen N, --seed N, --out файл, --model файл"
+            );
+            Console.WriteLine("pareto [опції] [файли_або_папки]");
+            Console.WriteLine(
+                "опції pareto: --pop N, --gen N, --seed N, --out файл, --model файл, --crossover single|uniform"
+            );
             Console.WriteLine("check");
         }
 
@@ -376,11 +385,103 @@ namespace SimpleArchiver
             }
         }
 
-        // Оптимізує параметри архіватора генетичним алгоритмом і порівнює з випадковим пошуком
+        // Оптимізує параметри архіватора генетичним алгоритмом і порівнює з випадковим (та локальним у --advanced) пошуком
         static void RunGa(string[] args)
         {
             TeamConfig config = TeamConfig.LoadIfExists(TeamConfig.DefaultPath);
             var options = new GaRunOptions { Seed = config.Seed };
+            bool crossoverExplicit = false;
+            int index = 1;
+
+            while (index < args.Length && args[index].StartsWith("--"))
+            {
+                string option = args[index];
+                if (option == "--advanced")
+                {
+                    options.Advanced = true;
+                    options.AdaptiveMutation = true;
+                    index++;
+                    continue;
+                }
+
+                if (index + 1 >= args.Length)
+                    throw new ArgumentException($"після {option} потрібне значення");
+
+                string value = args[index + 1];
+                index += 2;
+
+                if (option == "--pop")
+                    options.PopulationSize = ParsePositive(value, option);
+                else if (option == "--gen")
+                    options.Generations = ParsePositive(value, option);
+                else if (option == "--seed")
+                {
+                    if (!int.TryParse(value, out int seed))
+                        throw new ArgumentException($"після {option} потрібне ціле число");
+                    options.Seed = seed;
+                }
+                else if (option == "--out")
+                    options.LogPath = value;
+                else if (option == "--model")
+                    options.ClassifierPath = value;
+                else if (option == "--crossover")
+                {
+                    options.Crossover = ParseCrossover(value);
+                    crossoverExplicit = true;
+                }
+                else
+                    throw new ArgumentException($"невідома опція {option}");
+            }
+
+            if (options.Advanced && !crossoverExplicit)
+                options.Crossover = CrossoverType.Uniform;
+
+            string[] inputPaths = ResolveCorpusPaths(args, index);
+            List<ArchiveFile> corpus = GeneticOptimizer.LoadCorpus(inputPaths);
+            long totalBytes = 0;
+            foreach (ArchiveFile f in corpus)
+                totalBytes += f.Data.Length;
+
+            Console.WriteLine(
+                $"Корпус: {corpus.Count} файлів, {totalBytes} байтів (labels.csv виключено)"
+            );
+
+            string? tempModelPath = null;
+            if (options.Advanced && options.ClassifierPath == null)
+                options.ClassifierPath = PrepareTempClassifierIfAvailable(out tempModelPath);
+
+            try
+            {
+                GaComparisonReport report = GeneticOptimizer.CompareWithRandomSearch(
+                    corpus,
+                    config,
+                    options
+                );
+
+                Console.WriteLine("Покоління ГА:");
+                foreach (GaGenerationRecord row in report.Genetic.History)
+                {
+                    Console.WriteLine(
+                        $"  gen={row.Generation} evals={row.Evaluations} mut={row.MutationRate:F2} best_Q={row.BestQ:F4} avg_Q={row.AverageQ:F4} S={row.BestS:F4} T={row.BestT:F4} [{row.BestParams}]"
+                    );
+                }
+
+                Console.WriteLine();
+                Console.Write(report.TableText);
+                Console.WriteLine($"Журнал поколінь збережено у {report.GenerationsLogPath}");
+            }
+            finally
+            {
+                if (tempModelPath != null && File.Exists(tempModelPath))
+                    File.Delete(tempModelPath);
+            }
+        }
+
+        // Багатокритеріальна оптимізація за (S, T) і побудова фронту Парето (NSGA-II)
+        static void RunPareto(string[] args)
+        {
+            TeamConfig config = TeamConfig.LoadIfExists(TeamConfig.DefaultPath);
+            var options = new ParetoRunOptions { Seed = config.Seed };
             int index = 1;
 
             while (index < args.Length && args[index].StartsWith("--"))
@@ -403,42 +504,95 @@ namespace SimpleArchiver
                     options.Seed = seed;
                 }
                 else if (option == "--out")
-                    options.LogPath = value;
+                    options.OutputPath = value;
                 else if (option == "--model")
                     options.ClassifierPath = value;
+                else if (option == "--crossover")
+                    options.Crossover = ParseCrossover(value);
                 else
                     throw new ArgumentException($"невідома опція {option}");
             }
 
-            string[] inputPaths =
-                index < args.Length
-                    ? args[index..]
-                    : (
-                        Directory.Exists("data/corpus")
-                            ? new[] { "data/corpus" }
-                            : throw new ArgumentException("потрібен хоча б один файл або папка корпусу")
-                    );
-
+            string[] inputPaths = ResolveCorpusPaths(args, index);
             List<ArchiveFile> corpus = GeneticOptimizer.LoadCorpus(inputPaths);
             long totalBytes = 0;
             foreach (ArchiveFile f in corpus)
                 totalBytes += f.Data.Length;
 
-            Console.WriteLine($"Корпус: {corpus.Count} файлів, {totalBytes} байтів (labels.csv виключено)");
+            Console.WriteLine(
+                $"Корпус: {corpus.Count} файлів, {totalBytes} байтів (labels.csv виключено)"
+            );
 
-            GaComparisonReport report = GeneticOptimizer.CompareWithRandomSearch(corpus, config, options);
+            string? tempModelPath = null;
+            if (options.ClassifierPath == null)
+                options.ClassifierPath = PrepareTempClassifierIfAvailable(out tempModelPath);
 
-            Console.WriteLine("Покоління ГА:");
-            foreach (GaGenerationRecord row in report.Genetic.History)
+            try
             {
-                Console.WriteLine(
-                    $"  gen={row.Generation} evals={row.Evaluations} best_Q={row.BestQ:F4} avg_Q={row.AverageQ:F4} S={row.BestS:F4} T={row.BestT:F4} [{row.BestParams}]"
-                );
+                ParetoResult result = ParetoOptimizer.Optimize(corpus, config, options);
+                Console.WriteLine();
+                Console.Write(result.MarkdownTable);
+                Console.WriteLine($"Фронт Парето збережено у {result.OutputPath}");
+            }
+            finally
+            {
+                if (tempModelPath != null && File.Exists(tempModelPath))
+                    File.Delete(tempModelPath);
+            }
+        }
+
+        static CrossoverType ParseCrossover(string value)
+        {
+            if (string.Equals(value, "single", StringComparison.OrdinalIgnoreCase))
+                return CrossoverType.SinglePoint;
+            if (string.Equals(value, "uniform", StringComparison.OrdinalIgnoreCase))
+                return CrossoverType.Uniform;
+
+            throw new ArgumentException($"невідомий кросовер {value}, очікується single або uniform");
+        }
+
+        static string[] ResolveCorpusPaths(string[] args, int index)
+        {
+            if (index < args.Length)
+                return args[index..];
+
+            if (Directory.Exists("data/corpus"))
+                return new[] { "data/corpus" };
+
+            throw new ArgumentException("потрібен хоча б один файл або папка корпусу");
+        }
+
+        static string? PrepareTempClassifierIfAvailable(out string? tempModelPath)
+        {
+            tempModelPath = null;
+            if (File.Exists("experiments/classifier.model"))
+                return "experiments/classifier.model";
+
+            if (Directory.Exists("data/train") && Directory.Exists("data/valid"))
+            {
+                Console.WriteLine("Навчаємо класифікатор для стратегій за типами файлів...");
+                List<Sample> train = Dataset.Load("data/train");
+                List<Sample> valid = Dataset.Load("data/valid");
+                if (train.Count > 0 && valid.Count > 0)
+                {
+                    FileClassifier classifier = FileClassifier.TrainBest(
+                        train,
+                        valid,
+                        new[] { 2 },
+                        150,
+                        0.1,
+                        false
+                    );
+                    tempModelPath = Path.Combine(
+                        Path.GetTempPath(),
+                        "sarc-ga-model-" + Guid.NewGuid().ToString("N") + ".txt"
+                    );
+                    classifier.Save(tempModelPath);
+                    return tempModelPath;
+                }
             }
 
-            Console.WriteLine();
-            Console.Write(report.TableText);
-            Console.WriteLine($"Журнал поколінь збережено у {report.GenerationsLogPath}");
+            return null;
         }
     }
 }
