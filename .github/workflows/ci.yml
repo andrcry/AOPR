@@ -18,8 +18,15 @@ jobs:
       - name: Збірка
         run: dotnet build SimpleArchiver.slnx -c Release
 
-      - name: Автотести
-        run: dotnet test SimpleArchiver.slnx -c Release --no-build --verbosity normal
+      - name: Автотести та покриття коду
+        run: dotnet test SimpleArchiver.slnx -c Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory TestResults
+
+      - name: Збереження звіту покриття
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage
+          path: TestResults/**/coverage.cobertura.xml
 
       - name: Контрольні точки
         run: dotnet run -c Release --no-build --project src/SimpleArchiver -- check

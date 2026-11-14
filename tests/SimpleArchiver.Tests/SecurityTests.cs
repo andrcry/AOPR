@@ -283,5 +283,143 @@ namespace SimpleArchiver.Tests
                 File.Delete(path);
             }
         }
+
+        // ---------- Модуль атаки (п. 3.7) ----------
+
+        // Модель природного тексту, навчена на іншому тексті, ніж той, що атакуємо
+        static ByteLanguageModel TextModel() =>
+            ByteLanguageModel.FromSamples(new[] { SyntheticFiles.Text(20000, 99) });
+
+        // ГА знаходить короткий ключ багатобайтового XOR і повністю відновлює текст
+        [Fact]
+        public void GaBreaksRepeatingKeyXor()
+        {
+            byte[] plain = SyntheticFiles.Text(3000, 5);
+            byte[] key = Encoding.ASCII.GetBytes("K3y!x");
+            byte[] cipher = WeakCipherAttack.Encrypt(plain, key, WeakCipherKind.Xor);
+            Assert.NotEqual(plain, cipher);
+
+            CipherAttackResult result = WeakCipherAttack.BreakWithGa(
+                cipher,
+                TextModel(),
+                WeakCipherKind.Xor,
+                new CipherGaOptions { Seed = 7 }
+            );
+
+            Assert.Equal(key.Length, result.EstimatedKeyLength);
+            Assert.Equal(key, result.RecoveredKey);
+            Assert.Equal(plain, result.Decrypted);
+            Assert.Equal(1.0, WeakCipherAttack.Accuracy(plain, result.Decrypted));
+        }
+
+        // ГА знаходить ключ байтового шифру Віженера; найкраща пристосованість не спадає (елітизм)
+        [Fact]
+        public void GaBreaksVigenere()
+        {
+            byte[] plain = SyntheticFiles.Text(3000, 11);
+            byte[] key = { 0x13, 0xA7, 0x5C, 0xF0, 0x2E, 0x81 };
+            byte[] cipher = WeakCipherAttack.Encrypt(plain, key, WeakCipherKind.Vigenere);
+            Assert.Equal(plain, WeakCipherAttack.Decrypt(cipher, key, WeakCipherKind.Vigenere));
+
+            CipherAttackResult result = WeakCipherAttack.BreakWithGa(
+                cipher,
+                TextModel(),
+                WeakCipherKind.Vigenere,
+                new CipherGaOptions { Seed = 3 }
+            );
+
+            Assert.Equal(key, result.RecoveredKey);
+            Assert.Equal(plain, result.Decrypted);
+            for (int g = 1; g < result.BestByGeneration.Count; g++)
+                Assert.True(result.BestByGeneration[g] >= result.BestByGeneration[g - 1]);
+        }
+
+        // Атака на метадані: без вирівнювання кожен файл впізнається за CiphertextLength,
+        // з вирівнюванням відбитки збігаються і тип вгадати важче
+        [Fact]
+        public void PaddingNeutralizesMetadataAttack()
+        {
+            var files = new List<ArchiveFile>
+            {
+                new ArchiveFile("t1.txt", SyntheticFiles.Text(3000, 1)),
+                new ArchiveFile("t2.txt", SyntheticFiles.Text(9000, 2)),
+                new ArchiveFile("c1.csv", SyntheticFiles.Csv(5000, 3)),
+                new ArchiveFile("c2.csv", SyntheticFiles.Csv(15000, 4)),
+                new ArchiveFile("z1.z", SyntheticFiles.Compressed(2000, 5)),
+                new ArchiveFile("z2.z", SyntheticFiles.Compressed(6000, 6)),
+                new ArchiveFile("s1.dat", SyntheticFiles.Synthetic(4000, 7)),
+                new ArchiveFile("s2.dat", SyntheticFiles.Synthetic(12000, 8)),
+            };
+            int[] types = { 0, 0, 2, 2, 5, 5, 6, 6 };
+
+            MetadataLeakResult plain = WeakCipherAttack.AttackMetadata(
+                files,
+                types,
+                new Settings(),
+                "без вирівнювання",
+                TestHelpers.Password
+            );
+            MetadataLeakResult padded = WeakCipherAttack.AttackMetadata(
+                files,
+                types,
+                new Settings { PadUnit = 16384 },
+                "кратно 16384",
+                TestHelpers.Password
+            );
+
+            Assert.Equal(files.Count, plain.UniquelyIdentified);
+            Assert.Equal(1.0, plain.TypeGuessAccuracy);
+            Assert.True(padded.DistinctFingerprints < plain.DistinctFingerprints);
+            Assert.True(padded.TypeGuessAccuracy < plain.TypeGuessAccuracy);
+            Assert.True(padded.LeakBits < plain.LeakBits);
+            Assert.True(padded.VisibleBytes > plain.VisibleBytes);
+        }
+
+        // Зміна будь-якого байта nonce, шифротексту чи пломби відбивається з кодом E_HMAC
+        // (в однотомному архіві - і зміна солі); у багатотомному зміна солі дає E_VOLUMES ще до HMAC
+        [Fact]
+        public void TamperAttackIsRejectedWithHmac()
+        {
+            // Однотомний архів: будь-яка зміна байта - E_HMAC
+            List<byte[]> single = ArchiveWriter.CreateArchive(
+                TestHelpers.OneFile("a.txt", SyntheticFiles.Text(8000, 20)),
+                TestHelpers.Password,
+                new Settings()
+            );
+            Assert.Single(single);
+            List<TamperResult> singleResults = WeakCipherAttack.TamperAttack(
+                single,
+                TestHelpers.Password,
+                10,
+                2001
+            );
+            Assert.All(singleResults, r => Assert.Equal(ErrorCodes.Hmac, r.Code));
+
+            // Багатотомний архів
+            var files = new List<ArchiveFile>
+            {
+                new ArchiveFile("a.txt", SyntheticFiles.Text(40000, 21)),
+                new ArchiveFile("b.bin", SyntheticFiles.Compressed(50000, 22)),
+            };
+            var settings = new Settings { MaxVolumeBytes = 32768 };
+            List<byte[]> volumes = ArchiveWriter.CreateArchive(files, TestHelpers.Password, settings);
+            Assert.True(volumes.Count > 1);
+            Assert.Equal("OK", WeakCipherAttack.ReadCode(volumes, TestHelpers.Password));
+
+            List<TamperResult> results = WeakCipherAttack.TamperAttack(
+                volumes,
+                TestHelpers.Password,
+                5,
+                2001
+            );
+
+            Assert.NotEmpty(results);
+            Assert.All(results, r => Assert.True(r.Rejected));
+            Assert.All(results, r => Assert.Equal(r.Expected, r.Code));
+            Assert.All(
+                results.Where(r => r.Region != "сіль"),
+                r => Assert.Equal(ErrorCodes.Hmac, r.Code)
+            );
+        }
     }
 }
