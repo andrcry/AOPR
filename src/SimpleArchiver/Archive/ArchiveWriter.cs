@@ -30,7 +30,7 @@ namespace SimpleArchiver
         {
             List<Payload> payloads = BuildPayloads(files, settings);
 
-            // Крок 6. Зашифрувати і запломбувати кожен том
+            // Навантаження томів уже готові (BuildPayloads). Пароль один раз перетворюємо на ключі, потім шифруємо і пломбуємо кожен том
             Keys keys = Keys.Derive(password, salt); // один раз на весь архів
 
             var volumes = new List<byte[]>();
@@ -66,13 +66,13 @@ namespace SimpleArchiver
             {
                 byte[] data = files[fileNumber].Data;
 
-                // Крок 1. Тип файла визначає перцептрон
+                // Тип файла визначає перцептрон. Без класифікатора всі файли вважаються типу 0
                 int fileType = classifier == null ? 0 : classifier.Classify(data);
 
                 // Вже стиснуті файли (JPEG, ZIP, MP3) немає сенсу стискати ще раз
                 bool compress = fileType != FileClassifier.AlreadyCompressed;
 
-                // Крок 2. Параметри стиснення за типом файла, якщо їх увімкнено
+                // Параметри стиснення за типом файла, якщо їх увімкнено
                 Settings fileSettings = settings;
                 if (classifier != null && settings.UseTypeStrategy)
                 {
@@ -93,7 +93,7 @@ namespace SimpleArchiver
                 record.Strategy = compress ? (int)fileSettings.Parser : 0;
                 records.Add(record);
 
-                // Крок 3. Розбиття на блоки: фіксоване або ДП
+                // Розбиття на блоки: фіксоване або ДП
                 List<PreparedBlock> fileBlocks =
                     compress && fileSettings.UseDpBlockSplit
                         ? BlockSplitter.SplitDp(data, fileSettings)
@@ -107,10 +107,10 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 4. Розкласти блоки по томах (рюкзак)
+            // Розкласти блоки по томах: для кожного тому рюкзак обирає блоки, решта йде в наступний том
             List<Payload> payloads = VolumePacker.Pack(records, blocks, settings);
 
-            // Крок 5. Вирівняти розмір кожного тому, якщо це увімкнено
+            // Вирівняти розмір кожного тому, якщо це увімкнено
             if (VolumePadding.IsEnabled(settings))
                 AddPadding(payloads, settings);
 

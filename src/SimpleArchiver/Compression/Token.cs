@@ -8,7 +8,7 @@ namespace SimpleArchiver
         public int Length { get; set; } // довжина посилання, від 3 до 258
         public int Distance { get; set; } // відстань назад, від 1 до 32768
 
-        // Створює літерал
+        // Створює літерал: один байт, який записується як є
         public static Token MakeLiteral(byte value)
         {
             var token = new Token();
@@ -16,7 +16,7 @@ namespace SimpleArchiver
             return token;
         }
 
-        // Створює посилання
+        // Створює посилання: повернутися на distance байтів назад і скопіювати length байтів
         public static Token MakeMatch(int length, int distance)
         {
             var token = new Token();

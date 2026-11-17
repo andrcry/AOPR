@@ -54,11 +54,11 @@ namespace SimpleArchiver
 
             Directory.CreateDirectory(folder);
 
-            // Крок 1. Пояснення і параметри команди
+            // Файл з поясненням, звідки взялися дані, і параметри команди
             File.WriteAllText(Path.Combine(folder, "README_DEMO.md"), DemoReadme(seed));
             File.WriteAllText(Path.Combine(folder, "team_config.json"), MakeTeamConfig(seed));
 
-            // Крок 2. Корпус: по папці на кожну групу, файли по 20-80 КБ
+            // Корпус: по папці на кожну групу, файли по 20-80 КБ
             for (int group = 0; group < DemoFiles.groupNames.Length; group++)
             {
                 string groupFolder = Path.Combine(folder, "corpus", DemoFiles.groupNames[group]);
@@ -75,11 +75,11 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 3. Вибірки для класифікатора з labels.csv. Різні seed, щоб файли не повторювались
+            // Вибірки для класифікатора з labels.csv. Різні seed, щоб файли не повторювались
             MakeSamples(Path.Combine(folder, "train"), trainFilesPerGroup, seed * 1000 + 10000);
             MakeSamples(Path.Combine(folder, "valid"), validFilesPerGroup, seed * 1000 + 20000);
 
-            // Крок 4. Еталонні архіви і зіпсовані архіви
+            // Еталонні архіви і зіпсовані архіви, назви як у розділі 9 специфікації
             string reference = Path.Combine(folder, "reference");
             Directory.CreateDirectory(reference);
             MakeReferences(reference, seed);
@@ -223,7 +223,7 @@ namespace SimpleArchiver
             List<byte[]> volumes
         )
         {
-            // Крок 1. Томи: один том - ім'я.arc, кілька - ім'я.part0.arc, ім'я.part1.arc, ...
+            // Томи: один том - ім'я.arc, кілька - ім'я.part0.arc, ім'я.part1.arc, ...
             var volumeNames = new List<string>();
             for (int i = 0; i < volumes.Count; i++)
             {
@@ -232,7 +232,7 @@ namespace SimpleArchiver
                 volumeNames.Add(volumeName);
             }
 
-            // Крок 2. Опис архіву в тому самому вигляді, що й у викладача: томи, пароль і вміст
+            // Опис архіву в тому самому вигляді, що й у викладача: томи, пароль і вміст
             var json = new StringBuilder();
             json.Append("{\n");
             json.Append($"  \"опис\": \"{description}\",\n");

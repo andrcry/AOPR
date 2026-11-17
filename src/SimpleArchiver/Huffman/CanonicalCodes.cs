@@ -8,7 +8,7 @@ namespace SimpleArchiver
         // Повертає код для кожного символу за його довжиною
         public static int[] Make(int[] lengths)
         {
-            // Скільки символів має кожну довжину
+            // Рахуємо, скільки символів має кожну довжину коду
             var countOfLength = new int[MaxLength + 1];
             foreach (int len in lengths)
             {
@@ -16,7 +16,7 @@ namespace SimpleArchiver
                     countOfLength[len]++;
             }
 
-            // Перший код для кожної довжини
+            // Перший код для кожної довжини: коди коротшої довжини йдуть раніше
             var nextCode = new int[MaxLength + 1];
             int code = 0;
             for (int len = 1; len <= MaxLength; len++)
@@ -25,7 +25,7 @@ namespace SimpleArchiver
                 nextCode[len] = code;
             }
 
-            // Символи за зростанням отримують коди підряд
+            // Символи з однаковою довжиною за зростанням отримують коди підряд
             var codes = new int[lengths.Length];
             for (int s = 0; s < lengths.Length; s++)
             {

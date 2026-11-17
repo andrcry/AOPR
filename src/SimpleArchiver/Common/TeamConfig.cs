@@ -46,23 +46,23 @@ namespace SimpleArchiver
                 using JsonDocument json = JsonDocument.Parse(File.ReadAllText(path));
                 JsonElement root = json.RootElement;
 
-                // Крок 1. Команда, seed і пароль еталонних архівів
+                // Команда, seed і пароль еталонних архівів
                 config.Team = root.GetProperty("команда").GetString() ?? "";
                 config.Seed = root.GetProperty("seed").GetInt32();
                 config.Password = root.GetProperty("пароль_сеансу").GetString() ?? "";
 
-                // Крок 2. Метрика Q
+                // Метрика Q: коефіцієнти alpha і beta та еталонний час t_ref
                 JsonElement q = root.GetProperty("метрика_Q");
                 config.Alpha = q.GetProperty("alpha").GetDouble();
                 config.Beta = q.GetProperty("beta").GetDouble();
                 config.TRef = q.GetProperty("t_ref_секунд").GetDouble();
 
-                // Крок 3. Розмір тому і блока
+                // Розмір тому і блока
                 JsonElement packing = root.GetProperty("пакування");
                 config.MaxVolumeBytes = packing.GetProperty("max_volume_bytes").GetInt32();
                 config.BlockSize = packing.GetProperty("block_size").GetInt32();
 
-                // Крок 4. Пріоритети записані за назвою типу, наприклад "природний текст": 3
+                // Пріоритети записані за назвою типу, наприклад "природний текст": 3
                 JsonElement priorities = root.GetProperty("пріоритети_типів");
                 config.TypePriorities = new int[FileClassifier.ClassCount];
                 for (int type = 0; type < FileClassifier.ClassCount; type++)
@@ -70,12 +70,12 @@ namespace SimpleArchiver
                         .GetProperty(FileClassifier.classNames[type])
                         .GetInt32();
 
-                // Крок 5. Фіксовані вартості ДП
+                // Фіксовані вартості ДП
                 JsonElement costs = root.GetProperty("фіксовані_вартості_ДП");
                 config.LiteralBits = costs.GetProperty("літерал_біт").GetInt32();
                 config.ReferenceBits = costs.GetProperty("посилання_база_біт").GetInt32();
 
-                // Крок 6. Класифікатор
+                // Класифікатор: поріг macro-F1, базові лінії і скільки разів навчати мережу
                 JsonElement classifier = root.GetProperty("класифікатор");
                 config.F1Min = classifier.GetProperty("F1_min").GetDouble();
                 config.BaselineMajority = classifier
@@ -89,7 +89,7 @@ namespace SimpleArchiver
                     .GetProperty("ініціалізацій")
                     .GetInt32();
 
-                // Крок 7. Довідкові числа
+                // Довідкові числа: розмір корпусу і архіву опорного пакувальника викладача
                 JsonElement reference = root.GetProperty("довідково");
                 config.CorpusBytes = reference.GetProperty("сирий_розмір").GetInt64();
                 config.ReferenceArchiveBytes = reference

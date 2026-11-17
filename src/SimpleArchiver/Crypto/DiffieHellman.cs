@@ -34,7 +34,7 @@ namespace SimpleArchiver
         public static readonly BigInteger prime = FromHex(primeHex); // модуль p
         public static readonly BigInteger generator = 2; // генератор g
 
-        // Крок 1. Створює секретний ключ: випадкове число від 2 до p - 2
+        // Створює секретний ключ: випадкове число від 2 до p - 2
         public static BigInteger GeneratePrivateKey()
         {
             while (true)
@@ -47,18 +47,18 @@ namespace SimpleArchiver
             }
         }
 
-        // Крок 2. Відкритий ключ: A = g^a mod p
+        // Відкритий ключ: A = g^a mod p
         public static BigInteger PublicKey(BigInteger privateKey) =>
             BigInteger.ModPow(generator, privateKey, prime);
 
-        // Крок 3. Спільний секрет: s = B^a mod p, де B - відкритий ключ іншої сторони
+        // Спільний секрет: s = B^a mod p, де B - відкритий ключ іншої сторони
         public static BigInteger SharedSecret(BigInteger privateKey, BigInteger otherPublicKey)
         {
             CheckPublicKey(otherPublicKey);
             return BigInteger.ModPow(otherPublicKey, privateKey, prime);
         }
 
-        // Крок 4. Пароль архіву: SHA-256 від спільного секрету, записаний шістнадцятковими цифрами
+        // Пароль архіву: SHA-256 від спільного секрету, записаний шістнадцятковими цифрами
         public static string SharedPassword(BigInteger privateKey, BigInteger otherPublicKey)
         {
             BigInteger secret = SharedSecret(privateKey, otherPublicKey);
@@ -87,6 +87,16 @@ namespace SimpleArchiver
         public static void SaveKey(string path, BigInteger key)
         {
             File.WriteAllText(path, ToHex(key));
+        }
+
+        // Зберігає секретний ключ. На macOS і Linux файл може читати лише його власник,
+        // щоб інші користувачі компʼютера не могли взяти ключ і відкрити архіви
+        public static void SavePrivateKey(string path, BigInteger key)
+        {
+            SaveKey(path, key);
+
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
 
         // Читає ключ з текстового файла

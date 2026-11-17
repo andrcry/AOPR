@@ -29,7 +29,7 @@ namespace SimpleArchiver
             passed = 0;
             total = 0;
 
-            // Крок 1. Еталонні архіви: ref_01_single_file.json і томи ref_01_single_file.arc
+            // Еталонні архіви: ref_01_single_file.json і томи ref_01_single_file.arc
             lines.Add("Еталонні архіви");
             lines.Add("архів\tтомів\tфайлів\tрезультат\tопис");
 
@@ -73,9 +73,13 @@ namespace SimpleArchiver
                 {
                     lines.Add($"{name}\t-\t-\tПОМИЛКА: у .json немає потрібного поля\t");
                 }
+                catch (FormatException)
+                {
+                    lines.Add($"{name}\t-\t-\tПОМИЛКА: у .json неправильне значення crc32\t");
+                }
             }
 
-            // Крок 2. Зіпсовані архіви з expected_failures.json
+            // Зіпсовані архіви з expected_failures.json
             lines.Add("");
             lines.Add("Зіпсовані архіви");
             lines.Add("архів\tочікується\tотримано\tрезультат\tопис");
@@ -90,20 +94,35 @@ namespace SimpleArchiver
                 // Пароль зіпсованих архівів - пароль_сеансу з team_config.json
                 string password = TeamConfig.LoadIfExists(TeamConfig.DefaultPath).Password;
 
-                using JsonDocument json = JsonDocument.Parse(File.ReadAllText(expectedPath));
-                foreach (JsonProperty item in json.RootElement.EnumerateObject())
+                // Пошкоджений expected_failures.json дає рядок з поясненням, а не аварійне завершення
+                try
                 {
-                    total++;
-                    string expected = item.Value.GetProperty("очікуваний_код").GetString() ?? "";
-                    string description = item.Value.GetProperty("опис").GetString() ?? "";
-                    string got = ErrorWhenReading(Path.Combine(folder, item.Name), password);
+                    using JsonDocument json = JsonDocument.Parse(File.ReadAllText(expectedPath));
+                    foreach (JsonProperty item in json.RootElement.EnumerateObject())
+                    {
+                        total++;
+                        string expected =
+                            item.Value.GetProperty("очікуваний_код").GetString() ?? "";
+                        string description = item.Value.GetProperty("опис").GetString() ?? "";
+                        string got = ErrorWhenReading(Path.Combine(folder, item.Name), password);
 
-                    bool ok = got == expected;
-                    if (ok)
-                        passed++;
+                        bool ok = got == expected;
+                        if (ok)
+                            passed++;
 
+                        lines.Add(
+                            $"{item.Name}\t{expected}\t{got}\t{(ok ? "OK" : "ПОМИЛКА")}\t{description}"
+                        );
+                    }
+                }
+                catch (JsonException e)
+                {
+                    lines.Add($"ПОМИЛКА в expected_failures.json: {e.Message}");
+                }
+                catch (KeyNotFoundException)
+                {
                     lines.Add(
-                        $"{item.Name}\t{expected}\t{got}\t{(ok ? "OK" : "ПОМИЛКА")}\t{description}"
+                        "ПОМИЛКА: у expected_failures.json немає поля очікуваний_код або опис"
                     );
                 }
             }
@@ -116,7 +135,7 @@ namespace SimpleArchiver
         // Розпаковує архів у пам'ять і звіряє з описом у .json. Повертає "OK" або опис помилки
         static string CheckReference(JsonElement root, List<string> volumePaths)
         {
-            // Крок 1. Кількість томів і розмір кожного тому
+            // Кількість томів і розмір кожного тому
             int volumeCount = root.GetProperty("томів").GetInt32();
             if (volumePaths.Count != volumeCount)
                 return $"ПОМИЛКА: знайдено томів {volumePaths.Count}, а в .json {volumeCount}";
@@ -133,7 +152,7 @@ namespace SimpleArchiver
                 index++;
             }
 
-            // Крок 2. Розпакувати. Програма сама перевіряє HMAC і CRC32 кожного файла
+            // Розпаковуємо архів. Програма сама перевіряє HMAC кожного тому і CRC32 кожного файла
             List<ArchiveFile> files;
             try
             {
@@ -147,7 +166,7 @@ namespace SimpleArchiver
                 return $"ПОМИЛКА: {e.Code}";
             }
 
-            // Крок 3. Звірити кожен файл з розділом "вміст": ім'я, розмір і CRC32
+            // Звірити кожен файл з розділом "вміст": ім'я, розмір і CRC32
             JsonElement content = root.GetProperty("вміст");
             int described = 0;
             foreach (JsonProperty item in content.EnumerateObject())

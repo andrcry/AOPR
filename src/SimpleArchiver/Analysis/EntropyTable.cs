@@ -22,7 +22,7 @@ namespace SimpleArchiver
             lines.Add("Ентропія байтів і залишків прогнозу, біт на байт");
             lines.Add("група\tфайлів\tбайтів\tентропія_байтів\tентропія_залишків\tпрогноз_допоміг");
 
-            // Крок 1. Складаємо групи: назва групи і її файли
+            // Складаємо групи: назва групи і її файли
             var groupNames = new List<string>();
             var groupFiles = new List<List<string>>();
 
@@ -56,7 +56,7 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 2. Для кожної групи ентропія байтів і ентропія залишків прогнозу
+            // Для кожної групи ентропія байтів і ентропія залишків прогнозу
             for (int g = 0; g < groupNames.Count; g++)
                 lines.Add(GroupRow(groupNames[g], groupFiles[g], settings));
 

@@ -17,8 +17,8 @@ namespace SimpleArchiver
         // Стиснення
         public bool UseCompression { get; set; } = true; // false - усі блоки без стиснення (для таблиці впливу блоків на Q)
 
-        // LZ77
-        public ParserKind Parser { get; set; } = ParserKind.Lazy;
+        // Розбір LZ77
+        public ParserKind Parser { get; set; } = ParserKind.Lazy; // спосіб розбору: жадібний, лінивий або ДП
         public int MaxChain { get; set; } = 64; // скільки кандидатів перевіряти при пошуку збігу
 
         // Аналіз файлу

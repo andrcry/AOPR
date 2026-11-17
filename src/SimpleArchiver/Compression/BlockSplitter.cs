@@ -60,13 +60,13 @@ namespace SimpleArchiver
             int pieces = (data.Length + unit - 1) / unit;
             int maxSpan = settings.BlockSize / unit;
 
-            // Крок 1. F[0] = 0, решта - нескінченність
+            // F[0] = 0: порожній початок нічого не коштує. Решта значень спершу нескінченність, бо ще невідомі
             var best = new long[pieces + 1];
             var from = new int[pieces + 1];
             for (int j = 1; j <= pieces; j++)
                 best[j] = long.MaxValue;
 
-            // Крок 2. Для кожного кінця j перебрати всі можливі початки i
+            // Для кожного кінця j перебрати всі можливі початки i
             for (int j = 1; j <= pieces; j++)
             {
                 for (int i = Math.Max(0, j - maxSpan); i < j; i++)
@@ -81,13 +81,13 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 3. Зворотний хід: від кінця до початку збираємо межі блоків
+            // Зворотний хід: від кінця до початку збираємо межі блоків
             var starts = new List<int>();
             for (int j = pieces; j > 0; j = from[j])
                 starts.Add(from[j]);
             starts.Reverse();
 
-            // Крок 4. Закодувати обрані блоки
+            // Кодуємо блоки з тими межами, які обрало ДП
             var blocks = new List<PreparedBlock>();
             for (int k = 0; k < starts.Count; k++)
             {

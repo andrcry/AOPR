@@ -13,20 +13,20 @@ namespace SimpleArchiver
         {
             int target = length;
 
-            // Крок 1. До найближчого степеня двійки: 1, 2, 4, 8, ..., 4096, 8192, ...
+            // До найближчого степеня двійки: 1, 2, 4, 8, ..., 4096, 8192, ...
             if (settings.PadToPowerOfTwo)
             {
                 target = 1;
                 while (target < length)
                     target *= 2;
             }
-            // Крок 2. Або до найближчого числа, кратного PadUnit
+            // Або до найближчого числа, кратного PadUnit
             else if (settings.PadUnit > 0)
             {
                 target = (length + settings.PadUnit - 1) / settings.PadUnit * settings.PadUnit;
             }
 
-            // Крок 3. Том не може стати більшим за дозволений розмір
+            // Том не може стати більшим за дозволений розмір
             if (target > maxLength)
                 target = maxLength;
 

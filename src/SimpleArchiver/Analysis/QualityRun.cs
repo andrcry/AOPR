@@ -26,7 +26,7 @@ namespace SimpleArchiver
             string logPath = DefaultLog;
             int index = start;
 
-            // Крок 1. Опції, такі самі, як у pack: --parser, --split dp, --predict, --model, --strategy, і ще --log
+            // Опції, такі самі, як у pack: --parser, --split dp, --predict, --model, --strategy, і ще --log
             while (index < args.Length && args[index].StartsWith("--"))
             {
                 string option = args[index];
@@ -66,14 +66,14 @@ namespace SimpleArchiver
             if (settings.UseTypeStrategy && settings.ClassifierPath == null)
                 throw new ArgumentException("опція --strategy працює лише разом з --model");
 
-            // Крок 2. Корпус і параметри метрики з team_config.json
+            // Корпус і параметри метрики з team_config.json
             List<ArchiveFile> corpus = LoadCorpus(args, index);
             TeamConfig config = TeamConfig.LoadIfExists(TeamConfig.DefaultPath);
 
-            // Крок 3. Пакування, розпакування і перевірка кожного файла
+            // Пакування, розпакування і перевірка кожного файла
             QEvaluation result = Measure(corpus, settings, config, "базове Q", logPath);
 
-            // Крок 4. Рядки результату
+            // Рядки результату: параметри, значення S, T і Q і розрахунок за формулою
             var lines = new List<string>();
             lines.Add(
                 $"Метрика Q на корпусі: {corpus.Count} файлів, {result.OriginalBytes} байтів"

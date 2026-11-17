@@ -25,7 +25,9 @@ namespace SimpleArchiver
 
             if (index + 1 < args.Length && args[index] == "--pad")
             {
-                padUnit = int.Parse(args[index + 1]);
+                // TryParse замість Parse: неправильне число дає зрозуміле повідомлення, а не аварійне завершення
+                if (!int.TryParse(args[index + 1], out padUnit) || padUnit <= 0)
+                    throw new ArgumentException("після --pad потрібне додатне ціле число");
                 index += 2;
             }
 
@@ -33,7 +35,7 @@ namespace SimpleArchiver
             if (paths.Count == 0)
                 throw new ArgumentException("потрібен хоча б один файл");
 
-            // Крок 1. Три способи захисту, які порівнюємо
+            // Три способи захисту, які порівнюємо
             var plain = new Settings();
             var byUnit = new Settings();
             byUnit.PadUnit = padUnit;
@@ -48,7 +50,7 @@ namespace SimpleArchiver
                 "до степеня двійки",
             };
 
-            // Крок 2. Видимий розмір архіву кожного файла в кожному режимі
+            // Видимий розмір архіву кожного файла в кожному режимі
             var sizes = new long[modes.Length, paths.Count];
             var lines = new List<string>();
             lines.Add("Видимі розміри архівів, байтів");
@@ -69,7 +71,7 @@ namespace SimpleArchiver
                 lines.Add(row);
             }
 
-            // Крок 3. Кількісне порівняння способів захисту
+            // Кількісне порівняння способів захисту
             long plainTotal = Total(sizes, 0, paths.Count);
 
             lines.Add("");
