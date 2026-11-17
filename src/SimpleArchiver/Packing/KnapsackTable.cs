@@ -27,7 +27,12 @@ namespace SimpleArchiver
                     throw new ArgumentException($"після {args[index]} потрібне значення");
 
                 if (args[index] == "--volume")
-                    settings.MaxVolumeBytes = int.Parse(args[index + 1]);
+                {
+                    // TryParse замість Parse: неправильне число дає зрозуміле повідомлення, а не аварійне завершення
+                    if (!int.TryParse(args[index + 1], out int volume) || volume <= 0)
+                        throw new ArgumentException("після --volume потрібне додатне ціле число");
+                    settings.MaxVolumeBytes = volume;
+                }
                 else if (args[index] == "--model")
                     classifier = FileClassifier.Load(args[index + 1]);
                 else

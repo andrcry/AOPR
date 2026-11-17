@@ -89,6 +89,16 @@ namespace SimpleArchiver
             File.WriteAllText(path, ToHex(key));
         }
 
+        // Зберігає секретний ключ. На macOS і Linux файл може читати лише його власник,
+        // щоб інші користувачі компʼютера не могли взяти ключ і відкрити архіви
+        public static void SavePrivateKey(string path, BigInteger key)
+        {
+            SaveKey(path, key);
+
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
         // Читає ключ з текстового файла
         public static BigInteger LoadKey(string path)
         {
