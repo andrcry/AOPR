@@ -30,7 +30,7 @@ namespace SimpleArchiver
             string? modelPath = null;
             int index = start;
 
-            // Крок 1. Опція --model: готовий класифікатор. Без неї класифікатор навчається на data/train і data/valid
+            // Опція --model: готовий класифікатор. Без неї класифікатор навчається на data/train і data/valid
             if (index + 1 < args.Length && args[index] == "--model")
             {
                 modelPath = args[index + 1];
@@ -49,7 +49,7 @@ namespace SimpleArchiver
 
             try
             {
-                // Крок 2. Таблиця. Кожен прогін також дописується в experiments/corpus_run.log
+                // Будуємо таблицю. Кожен прогін також дописується в experiments/corpus_run.log
                 List<string> lines = Build(corpus, config, modelPath, QualityRun.DefaultLog);
                 foreach (string line in lines)
                     Console.WriteLine(line);
@@ -91,7 +91,7 @@ namespace SimpleArchiver
                     continue;
                 }
 
-                // Крок 1. Налаштування рядка і вимір Q
+                // Налаштування рядка і вимір Q
                 Settings settings = MakeSettings(row, modelPath);
                 QEvaluation result = QualityRun.Measure(
                     corpus,
@@ -103,7 +103,7 @@ namespace SimpleArchiver
                 if (row == 0)
                     full = result;
 
-                // Крок 2. Зміна Q відносно повної системи і висновок
+                // Зміна Q відносно повної системи і висновок
                 double change = full == null ? 0 : result.Q - full.Q;
                 change = Math.Round(change, 4);
                 if (change == 0)
@@ -121,7 +121,7 @@ namespace SimpleArchiver
         // Налаштування для рядка таблиці. Повна система - усі блоки ввімкнено, далі змінюється по одному
         static Settings MakeSettings(int row, string? modelPath)
         {
-            // Крок 1. Повна система: ДП-розбір, ДП-розбиття, прогноз байта, класифікатор, ДП-рюкзак
+            // Повна система: ДП-розбір, ДП-розбиття, прогноз байта, класифікатор, ДП-рюкзак
             var settings = new Settings();
             settings.Parser = ParserKind.Dp;
             settings.UseDpBlockSplit = true;
@@ -129,7 +129,7 @@ namespace SimpleArchiver
             settings.ClassifierPath = modelPath;
             settings.UseDpKnapsack = true;
 
-            // Крок 2. Для рядка змінюємо рівно один блок
+            // Для рядка змінюємо рівно один блок
             if (row == 1)
                 settings.UsePrediction = false;
             else if (row == 2)

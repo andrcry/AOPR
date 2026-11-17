@@ -20,7 +20,7 @@ namespace SimpleArchiver
             FileClassifier? classifier = null;
             int index = start;
 
-            // Крок 1. Опції: розмір тому і класифікатор типу файла
+            // Опції: розмір тому і класифікатор типу файла
             while (index < args.Length && args[index].StartsWith("--"))
             {
                 if (index + 1 >= args.Length)
@@ -40,7 +40,7 @@ namespace SimpleArchiver
             if (paths.Count == 0)
                 throw new ArgumentException("потрібен хоча б один файл");
 
-            // Крок 2. Кодуємо блоки всіх файлів. Вага блока - його розмір, цінність - пріоритет типу файла
+            // Кодуємо блоки всіх файлів. Вага блока - його розмір, цінність - пріоритет типу файла
             var weights = new List<int>();
             var values = new List<int>();
             int tableSize = 0;
@@ -67,7 +67,7 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 3. Місткість першого тому: таблицю файлів резервуємо до рюкзака
+            // Місткість першого тому: таблицю файлів резервуємо до рюкзака
             int capacity = settings.MaxVolumeBytes - VolumePacker.FixedOverhead - tableSize;
             if (capacity < 0)
                 throw new InvalidOperationException(
@@ -77,7 +77,7 @@ namespace SimpleArchiver
             int[] weightArray = weights.ToArray();
             int[] valueArray = values.ToArray();
 
-            // Крок 4. Розв'язуємо рюкзак обома алгоритмами на тих самих блоках
+            // Розв'язуємо рюкзак обома алгоритмами на тих самих блоках і міряємо час кожного
             Stopwatch timer = Stopwatch.StartNew();
             List<int> dp = Knapsack.SolveDp(weightArray, valueArray, capacity);
             double dpTime = timer.Elapsed.TotalMilliseconds;
@@ -95,7 +95,7 @@ namespace SimpleArchiver
             foreach (int w in weightArray)
                 allWeight += w;
 
-            // Крок 5. Рядки таблиці
+            // Рядки таблиці: результати обох алгоритмів, а нижче загальні числа
             var lines = new List<string>();
             lines.Add("Рюкзак першого тому, ДП проти жадібного алгоритму");
             lines.Add("алгоритм\tблоків_обрано\tвага_байтів\tцінність\tчас_мс");

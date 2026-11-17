@@ -29,7 +29,7 @@ namespace SimpleArchiver
             var settings = new Settings();
             var lines = new List<string>();
 
-            // Крок 1. Розбір LZ77 кожного файла трьома способами. Результати запам'ятовуємо для таблиці груп
+            // Розбір LZ77 кожного файла трьома способами. Результати запам'ятовуємо для таблиці груп
             var sizes = new long[paths.Count, parsers.Length];
             var times = new long[paths.Count, parsers.Length];
             var fileSizes = new long[paths.Count];
@@ -57,7 +57,7 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 2. Розбиття на блоки і прогноз
+            // Розмір блоків файла при фіксованому і ДП-розбитті, з прогнозом байта і без
             lines.Add("");
             lines.Add(
                 "Розбиття на блоки і прогноз, розмір блоків разом із записами таблиці блоків"
@@ -73,7 +73,7 @@ namespace SimpleArchiver
                 );
             }
 
-            // Крок 3. Те саме, що в кроці 1, але разом по кожній групі корпусу
+            // Ті самі розміри і час розборів, але додані разом по кожній групі корпусу
             lines.AddRange(GroupTable(paths, fileSizes, sizes, times));
             return lines;
         }

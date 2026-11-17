@@ -106,30 +106,33 @@ namespace SimpleArchiver
             return average / (average + 80.0);
         }
 
-        // Коефіцієнти кореляції між байтом і байтом на lag позицій далі, для лагів 1..maxLag.
+        // Коефіцієнти кореляції між байтом і байтом на lag позицій далі, для лагів від 1 до maxLag.
         // Середнє (mean) і сума квадратів відхилень (bottom) не залежать від лагу,
         // тому рахуються один раз, а не окремо для кожного з 16 лагів
         static double[] Autocorrelations(byte[] data, int maxLag)
         {
             var result = new double[maxLag];
 
+            // Середнє значення байта
             double mean = 0;
             foreach (byte b in data)
                 mean += b;
             mean /= data.Length;
 
+            // Сума квадратів відхилень
             double bottom = 0;
             for (int i = 0; i < data.Length; i++)
                 bottom += (data[i] - mean) * (data[i] - mean);
 
             if (bottom == 0)
-                return result; // усі байти однакові - кореляція 0 на всіх лагах
+                return result; // усі байти однакові, кореляція 0 на всіх лагах
 
+            // Кореляція для кожного лагу
             for (int lag = 1; lag <= maxLag; lag++)
             {
                 int n = data.Length - lag;
                 if (n < 2)
-                    continue; // замало пар для цього лагу - лишається 0
+                    continue; // замало пар для цього лагу, лишається 0
 
                 double top = 0;
                 for (int i = 0; i < n; i++)

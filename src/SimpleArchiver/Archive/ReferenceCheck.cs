@@ -29,7 +29,7 @@ namespace SimpleArchiver
             passed = 0;
             total = 0;
 
-            // Крок 1. Еталонні архіви: ref_01_single_file.json і томи ref_01_single_file.arc
+            // Еталонні архіви: ref_01_single_file.json і томи ref_01_single_file.arc
             lines.Add("Еталонні архіви");
             lines.Add("архів\tтомів\tфайлів\tрезультат\tопис");
 
@@ -75,7 +75,7 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 2. Зіпсовані архіви з expected_failures.json
+            // Зіпсовані архіви з expected_failures.json
             lines.Add("");
             lines.Add("Зіпсовані архіви");
             lines.Add("архів\tочікується\tотримано\tрезультат\tопис");
@@ -116,7 +116,7 @@ namespace SimpleArchiver
         // Розпаковує архів у пам'ять і звіряє з описом у .json. Повертає "OK" або опис помилки
         static string CheckReference(JsonElement root, List<string> volumePaths)
         {
-            // Крок 1. Кількість томів і розмір кожного тому
+            // Кількість томів і розмір кожного тому
             int volumeCount = root.GetProperty("томів").GetInt32();
             if (volumePaths.Count != volumeCount)
                 return $"ПОМИЛКА: знайдено томів {volumePaths.Count}, а в .json {volumeCount}";
@@ -133,7 +133,7 @@ namespace SimpleArchiver
                 index++;
             }
 
-            // Крок 2. Розпакувати. Програма сама перевіряє HMAC і CRC32 кожного файла
+            // Розпаковуємо архів. Програма сама перевіряє HMAC кожного тому і CRC32 кожного файла
             List<ArchiveFile> files;
             try
             {
@@ -147,7 +147,7 @@ namespace SimpleArchiver
                 return $"ПОМИЛКА: {e.Code}";
             }
 
-            // Крок 3. Звірити кожен файл з розділом "вміст": ім'я, розмір і CRC32
+            // Звірити кожен файл з розділом "вміст": ім'я, розмір і CRC32
             JsonElement content = root.GetProperty("вміст");
             int described = 0;
             foreach (JsonProperty item in content.EnumerateObject())

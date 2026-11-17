@@ -111,7 +111,7 @@ namespace SimpleArchiver
 
             while (text.Length < size)
             {
-                // Крок 1. Речення з 5-12 слів
+                // Речення з 5-12 слів
                 int count = 5 + random.Next(8);
                 for (int i = 0; i < count; i++)
                 {
@@ -124,7 +124,7 @@ namespace SimpleArchiver
                     lineLength += word.Length + 1;
                 }
 
-                // Крок 2. Новий рядок, коли рядок задовгий
+                // Новий рядок, коли рядок задовгий
                 if (lineLength > 60 + random.Next(30))
                 {
                     text.Append('\n');
@@ -207,7 +207,7 @@ namespace SimpleArchiver
         {
             var random = new Random(seed);
 
-            // Крок 1. Розмір картинки: квадрат, щоб файл був близько size байтів
+            // Розмір картинки: квадрат, щоб файл був близько size байтів
             int width = Math.Max(4, (int)Math.Sqrt(size / 3.0));
             int height = width;
             int rowSize = (width * 3 + 3) / 4 * 4; // рядок BMP вирівнюється до 4 байтів
@@ -215,7 +215,7 @@ namespace SimpleArchiver
 
             var writer = new ByteWriterLittle(54 + dataSize);
 
-            // Крок 2. Заголовок BMP (14 байтів) і заголовок картинки (40 байтів)
+            // Заголовок BMP (14 байтів) і заголовок картинки (40 байтів)
             writer.Byte((byte)'B');
             writer.Byte((byte)'M');
             writer.Int(54 + dataSize);
@@ -233,7 +233,7 @@ namespace SimpleArchiver
             writer.Int(0);
             writer.Int(0);
 
-            // Крок 3. Пікселі: градієнт плюс трохи шуму
+            // Пікселі: градієнт плюс трохи шуму
             int shift = random.Next(256);
             for (int y = 0; y < height; y++)
             {
@@ -279,12 +279,12 @@ namespace SimpleArchiver
                 0x0F,
             };
 
-            // Крок 1. Заголовок
+            // Заголовок виконуваного файла Windows починається з літер MZ
             data[0] = (byte)'M';
             data[1] = (byte)'Z';
             data[2] = 0x90;
 
-            // Крок 2. Ділянки: код, нулі або таблиця рядків
+            // Далі випадкові ділянки: машинний код, нулі вирівнювання або таблиця рядків
             int position = 64;
             while (position < size)
             {

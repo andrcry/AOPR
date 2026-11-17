@@ -31,7 +31,7 @@ namespace SimpleArchiver
         {
             var lengths = new int[freq.Length];
 
-            // Черга з пріоритетом
+            // Черга з пріоритетом: першим виходить вузол з найменшою частотою. Order розрізняє вузли з однаковою частотою, щоб дерево завжди будувалося однаково
             // Другий ключ - порядок вставки, щоб при однакових частотах результат був завжди однаковий
             var queue = new PriorityQueue<HuffmanNode, (long Weight, int Order)>();
             int order = 0;
@@ -55,7 +55,7 @@ namespace SimpleArchiver
                 return lengths;
             }
 
-            // Злиття двох найменших вузлів, доки не залишиться один
+            // Жадібний вибір: беремо два найрідші вузли і зливаємо їх в один, доки не залишиться один корінь
             while (queue.Count > 1)
             {
                 HuffmanNode a = queue.Dequeue();
@@ -69,7 +69,7 @@ namespace SimpleArchiver
                 queue.Enqueue(parent, (parent.Weight, order++));
             }
 
-            // Довжина коду = глибина листка
+            // Довжина коду символу дорівнює глибині його листка в дереві
             SaveDepths(queue.Dequeue(), 0, lengths);
             return lengths;
         }

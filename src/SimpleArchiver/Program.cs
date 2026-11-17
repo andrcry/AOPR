@@ -86,7 +86,10 @@ namespace SimpleArchiver
                 else if (command == "q-table")
                     BlockImpactTable.Print(args, 1);
                 else if (command == "crypto-order")
-                    CryptoOrderTable.Print(args.Length >= 2 ? args : new[] { "crypto-order", "data/corpus" }, 1);
+                    CryptoOrderTable.Print(
+                        args.Length >= 2 ? args : new[] { "crypto-order", "data/corpus" },
+                        1
+                    );
                 else if (command == "report" || command == "report-all")
                     ReportGenerator.Run(args);
                 else if (command == "attack")
@@ -166,7 +169,9 @@ namespace SimpleArchiver
             );
             Console.WriteLine("q-table --model файл файли_або_папки");
             Console.WriteLine("crypto-order [файли_або_папки]");
-            Console.WriteLine("report (або report-all) [--quick] [--ga-pop N] [--ga-gen N] [папка_корпусу]");
+            Console.WriteLine(
+                "report (або report-all) [--quick] [--ga-pop N] [--ga-gen N] [папка_корпусу]"
+            );
             Console.WriteLine(
                 "attack [--cipher xor|vigenere] [--key текст] [--seed N] [--pad байти] [файли_або_папки]"
             );

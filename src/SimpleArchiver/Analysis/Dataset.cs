@@ -24,7 +24,7 @@ namespace SimpleArchiver
             if (lines.Length == 0)
                 return labels;
 
-            // Крок 1. У першому рядку назви колонок. Шукаємо, де ім'я файла і де тип.
+            // У першому рядку назви колонок. Шукаємо, де ім'я файла і де тип.
             // Якщо назв колонок немає, ім'я файла - перша колонка, тип - друга
             string[] header = lines[0].Split(',');
             int fileColumn = 0;
@@ -45,7 +45,7 @@ namespace SimpleArchiver
                 }
             }
 
-            // Крок 2. Решта рядків: ім'я файла і число 0-6
+            // Решта рядків: ім'я файла і число 0-6
             for (int i = firstLine; i < lines.Length; i++)
             {
                 string[] parts = lines[i].Split(',');
