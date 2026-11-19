@@ -3,7 +3,7 @@ namespace SimpleArchiver
     // Налаштування архіватора. Розмір блока, розмір тому і пріоритети типів беруться з team_config.json
     public class Settings
     {
-        // Значення з team_config.json. Тут записані значення команди T01, а програма на старті
+        // Значення з team_config.json. Тут записані значення команди, а програма на старті
         // читає файл і замінює їх (TeamConfig.Apply). Кожні нові налаштування беруть ці значення
         public static int teamBlockSize = 16384; // block_size
         public static int teamMaxVolumeBytes = 65536; // max_volume_bytes
