@@ -347,7 +347,7 @@ namespace SimpleArchiver
         }
 
         // Параметри команди в тому самому вигляді, що й team_config.json від викладача.
-        // Значення беремо з TeamConfig за замовчуванням, тобто такі самі, як у команди T01
+        // Значення беремо з TeamConfig за замовчуванням, тобто такі самі, як у команди
         static string MakeTeamConfig(int seed)
         {
             var config = new TeamConfig();

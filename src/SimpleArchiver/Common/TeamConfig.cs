@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace SimpleArchiver
 {
     // Параметри команди з файла data/team_config.json від викладача.
-    // Значення за замовчуванням тут такі самі, як у файлі команди T01, тому програма працює і без файла
+    // Значення за замовчуванням тут такі самі, як у файлі команди, тому програма працює і без файла
     public class TeamConfig
     {
         public const string DefaultPath = "data/team_config.json"; // де лежить файл, якщо запускати програму з папки проєкту
