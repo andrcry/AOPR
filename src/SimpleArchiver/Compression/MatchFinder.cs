@@ -34,11 +34,11 @@ namespace SimpleArchiver
         {
             while (added < pos)
             {
-                if (added + Lz77.MinMatch <= data.Length)
+                if (added + Lz77.MinMatch <= data.Length) // для хешу потрібні 3 байти
                 {
                     int h = Hash(added);
-                    previous[added] = head[h];
-                    head[h] = added;
+                    previous[added] = head[h]; // нова позиція пам'ятає ту, що була останньою
+                    head[h] = added; // і сама стає останньою
                 }
                 added++;
             }
@@ -54,35 +54,35 @@ namespace SimpleArchiver
         {
             AddPositionsBefore(pos);
 
-            if (pos + Lz77.MinMatch > data.Length)
+            if (pos + Lz77.MinMatch > data.Length) // до кінця менше 3 байтів
                 return (0, 0);
 
-            int maxLength = Math.Min(Lz77.MaxMatch, data.Length - pos);
-            int bestLength = Lz77.MinMatch - 1;
+            int maxLength = Math.Min(Lz77.MaxMatch, data.Length - pos); // не довше 258 і не за кінець
+            int bestLength = Lz77.MinMatch - 1; // 2: рахуються збіги від 3 байтів
             int bestDistance = 0;
-            int candidate = head[Hash(pos)];
+            int candidate = head[Hash(pos)]; // найближча позиція з тим самим хешем
             int checkedCount = 0;
 
             while (candidate >= 0 && checkedCount < maxChain)
             {
                 int distance = pos - candidate;
-                if (distance > Lz77.WindowSize)
+                if (distance > Lz77.WindowSize) // далі 32 768 не можна, а далі ще дальші
                     break;
 
                 int length = 0;
                 while (length < maxLength && data[candidate + length] == data[pos + length])
-                    length++;
+                    length++; // побайтове порівняння
 
                 if (length > bestLength)
                 {
                     bestLength = length;
                     bestDistance = distance;
-                    found?.Add((length, distance));
-                    if (length == maxLength)
+                    found?.Add((length, distance)); // для ДП зберігаємо кожне покращення
+                    if (length == maxLength) // довшого не буде
                         break;
                 }
 
-                candidate = previous[candidate];
+                candidate = previous[candidate]; // наступний, дальший кандидат
                 checkedCount++;
             }
 
