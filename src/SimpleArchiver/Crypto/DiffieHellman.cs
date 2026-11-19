@@ -34,17 +34,27 @@ namespace SimpleArchiver
         public static readonly BigInteger prime = FromHex(primeHex); // модуль p
         public static readonly BigInteger generator = 2; // генератор g
 
-        // Створює секретний ключ: випадкове число від 2 до p - 2
+        // Створює секретний ключ: випадкове число від 2 до p - 2.
+        // Якщо випало число поза межами (буває майже ніколи), беремо нове випадкове число
         public static BigInteger GeneratePrivateKey()
         {
-            while (true)
+            bool isWorking = true;  // true, поки ще шукаємо підходяще число
+
+            do
             {
                 byte[] bytes = RandomNumberGenerator.GetBytes(privateKeyBytes);
                 var key = new BigInteger(bytes, true, true);
 
                 if (key >= 2 && key <= prime - 2)
+                {
+                    // Число підходить: більше шукати не треба
+                    isWorking = false;
                     return key;
+                }
             }
+            while (isWorking);
+
+            throw new InvalidOperationException("не вдалося створити секретний ключ");
         }
 
         // Відкритий ключ: A = g^a mod p
