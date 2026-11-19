@@ -6,16 +6,23 @@ namespace SimpleArchiver
     {
         public const int MaxCodeLength = 15; // найбільша дозволена довжина коду
 
-        // Будує довжини кодів. Якщо код вийшов довшим за 15 бітів, ділить частоти навпіл і будує знову
+        // Будує довжини кодів. Якщо код вийшов довшим за 15 бітів, ділить частоти навпіл і будує знову.
+        // Цикл завжди закінчується: після кількох ділень навпіл кожна ненульова частота стає 1,
+        // а коли всі частоти однакові, дерево збалансоване і коди нашого алфавіту не довші за 15 бітів
         public static int[] BuildCodeLengths(long[] frequencies)
         {
             long[] freq = (long[])frequencies.Clone();
+            bool isWorking = true;  // true, поки ще пробуємо побудувати коди
 
-            while (true)
+            do
             {
                 int[] lengths = BuildOnce(freq);
                 if (MaxOf(lengths) <= MaxCodeLength)
+                {
+                    // Коди вклалися в 15 бітів: більше пробувати не треба
+                    isWorking = false;
                     return lengths;
+                }
 
                 // Згладжування частот: різниця між частими і рідкісними символами зменшується
                 for (int s = 0; s < freq.Length; s++)
@@ -24,6 +31,9 @@ namespace SimpleArchiver
                         freq[s] /= 2;
                 }
             }
+            while (isWorking);
+
+            throw new InvalidOperationException($"не вдалося побудувати коди Гаффмана не довші за {MaxCodeLength} бітів");
         }
 
         // Будує дерево один раз і повертає глибини листків

@@ -1,6 +1,6 @@
 namespace SimpleArchiver
 {
-    // Канонічні коди (розділ 3.4). В архів пишуться тільки довжини, коди рахуються з них
+    // Канонічні коди. В архів пишуться тільки довжини, коди рахуються з них
     public static class CanonicalCodes
     {
         public const int MaxLength = 15; // найбільша довжина коду
